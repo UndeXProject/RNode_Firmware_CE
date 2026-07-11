@@ -13,6 +13,12 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+#define PMU_TEMP_MIN -30
+#define PMU_TEMP_MAX 90
+#define PMU_TEMP_OFFSET 120
+bool pmu_temp_sensor_ready = false;
+float pmu_temperature = PMU_TEMP_MIN-1;
+
 #if BOARD_MODEL == BOARD_TBEAM || BOARD_MODEL == BOARD_TBEAM_S_V1
   #include <XPowersLib.h>
   XPowersLibInterface* PMU = NULL;
@@ -133,8 +139,38 @@
   float bat_delay_v = 0;
   float bat_state_change_v = 0;
 #elif BOARD_MODEL == BOARD_HELTEC32_V3
-  #define BAT_V_MIN       3.15
-  #define BAT_V_MAX       4.3
+  // Unless we implement some real voodoo
+  // on these boards, we can't say with
+  // any certainty whether we are actually
+  // charging and have reached a charge
+  // complete state. The *only* data point
+  // we have to go from is the bus voltage.
+  // The BAT_V_CHG and BAT_V_FLOAT values
+  // are set high here to avoid the display
+  // indication confusingly flapping
+  // between charge completed, charging and
+  // discharging states.
+  // Update: Vodoo implemented. Hopefully
+  // it will work accross different boards.
+  #define BAT_V_MIN       3.05
+  #define BAT_V_MAX       4.0
+  #define BAT_V_CHG       4.48
+  #define BAT_V_FLOAT     4.33
+  #define BAT_SAMPLES     7
+  const uint8_t pin_vbat = 1;
+  const uint8_t pin_ctrl = 37;
+  float bat_p_samples[BAT_SAMPLES];
+  float bat_v_samples[BAT_SAMPLES];
+  uint8_t bat_samples_count = 0;
+  int bat_discharging_samples = 0;
+  int bat_charging_samples = 0;
+  int bat_charged_samples = 0;
+  bool bat_voltage_dropping = false;
+  float bat_delay_v = 0;
+  float bat_state_change_v = 0;
+#elif BOARD_MODEL == BOARD_HELTEC32_V4
+  #define BAT_V_MIN       3.05
+  #define BAT_V_MAX       4.0
   #define BAT_V_CHG       4.48
   #define BAT_V_FLOAT     4.33
   #define BAT_SAMPLES     7
@@ -187,17 +223,35 @@
 uint32_t last_pmu_update = 0;
 uint8_t pmu_target_pps = 1;
 int pmu_update_interval = 1000/pmu_target_pps;
+uint8_t pmu_charged_ascertain = 0;
 uint8_t pmu_rc = 0;
+uint8_t pmu_sc = 0;
+float bat_delay_diff = 0;
+bool bat_diff_positive = false;
 #define PMU_R_INTERVAL 5
+#define PMU_SCV_RESET_INTERVAL 3
 void kiss_indicate_battery();
+void kiss_indicate_temperature();
+
+void measure_temperature() {
+  #if PLATFORM == PLATFORM_ESP32
+    if (pmu_temp_sensor_ready) { pmu_temperature = temperatureRead(); } else { pmu_temperature = PMU_TEMP_MIN-1; }
+  #endif
+}
 
 void measure_battery() {
-  #if BOARD_MODEL == BOARD_RNODE_NG_21 || BOARD_MODEL == BOARD_LORA32_V2_1 || BOARD_MODEL == BOARD_HELTEC32_V3 || BOARD_MODEL == BOARD_TDECK || BOARD_MODEL == BOARD_T3S3 || BOARD_MODEL == BOARD_HELTEC_T114 || BOARD_MODEL == BOARD_TECHO
+  #if BOARD_MODEL == BOARD_RNODE_NG_21 || BOARD_MODEL == BOARD_LORA32_V2_1 || BOARD_MODEL == BOARD_HELTEC32_V3 || BOARD_MODEL == BOARD_HELTEC32_V4 || BOARD_MODEL == BOARD_TDECK || BOARD_MODEL == BOARD_T3S3 || BOARD_MODEL == BOARD_HELTEC_T114 || BOARD_MODEL == BOARD_TECHO
     battery_installed = true;
-    battery_indeterminate = true;
+    #if BOARD_MODEL == BOARD_HELTEC32_V3 || BOARD_MODEL == BOARD_HELTEC32_V4
+      battery_indeterminate = false;
+    #else
+      battery_indeterminate = true;
+    #endif
 
     #if BOARD_MODEL == BOARD_HELTEC32_V3
       float battery_measurement = (float)(analogRead(pin_vbat)) * 0.0041;
+    #elif BOARD_MODEL == BOARD_HELTEC32_V4
+      float battery_measurement = (float)(analogRead(pin_vbat)) * 0.00418;
     #elif BOARD_MODEL == BOARD_T3S3
       float battery_measurement = (float)(analogRead(pin_vbat)) / 4095.0*6.7828;
     #elif BOARD_MODEL == BOARD_HELTEC_T114
@@ -236,23 +290,23 @@ void measure_battery() {
       if (battery_percent < 0.0) battery_percent = 0.0;
 
       if (bat_samples_count%BAT_SAMPLES == 0) {
-        float bat_delay_diff = bat_state_change_v-battery_voltage;
-        if (bat_delay_diff < 0) { bat_delay_diff *= -1; }
+        pmu_sc++;
+        bat_delay_diff = battery_voltage-bat_state_change_v;
 
         if (battery_voltage < bat_delay_v && battery_voltage < BAT_V_FLOAT) {
           if (bat_voltage_dropping == false) {
-            if (bat_delay_diff > 0.008) {
+            if (bat_delay_diff < -0.008) {
               bat_voltage_dropping = true;
               bat_state_change_v = battery_voltage;
-              // SerialBT.printf("STATE CHANGE to DISCHARGE at delta=%.3fv. State change v is now %.3fv.\n", bat_delay_diff, bat_state_change_v);
             }
+          } else {
+            if (pmu_sc%PMU_SCV_RESET_INTERVAL == 0) { bat_state_change_v = battery_voltage; }
           }
         } else {
           if (bat_voltage_dropping == true) {
             if (bat_delay_diff > 0.01) {
               bat_voltage_dropping = false;
               bat_state_change_v = battery_voltage;
-              // SerialBT.printf("STATE CHANGE to CHARGE at delta=%.3fv. State change v is now %.3fv.\n", bat_delay_diff, bat_state_change_v);
             }
           }
         }
@@ -261,12 +315,19 @@ void measure_battery() {
       }
 
       if (bat_voltage_dropping && battery_voltage < BAT_V_FLOAT) {
+        // if (battery_state != BATTERY_STATE_DISCHARGING) { SerialBT.printf("STATE CHANGE to DISCHARGING at delta=%.3fv. State change v is now %.3fv.\n", bat_delay_diff, bat_state_change_v); }
         battery_state = BATTERY_STATE_DISCHARGING;
+        pmu_charged_ascertain = 0;
       } else {
-        if (battery_percent < 100.0) {
-          battery_state = BATTERY_STATE_CHARGING;
-        } else {
-          battery_state = BATTERY_STATE_CHARGED;
+        if (pmu_charged_ascertain < 8) { pmu_charged_ascertain++; }
+        else {
+          if (battery_percent < 100.0) {
+            // if (battery_state != BATTERY_STATE_CHARGING) { SerialBT.printf("STATE CHANGE to CHARGING at delta=%.3fv. State change v is now %.3fv.\n", bat_delay_diff, bat_state_change_v); }
+            battery_state = BATTERY_STATE_CHARGING;
+          } else {
+            // if (battery_state != BATTERY_STATE_CHARGED) { SerialBT.printf("STATE CHANGE to CHARGED at delta=%.3fv. State change v is now %.3fv.\n", bat_delay_diff, bat_state_change_v); }
+            battery_state = BATTERY_STATE_CHARGED;
+          }
         }
       }
 
@@ -275,12 +336,12 @@ void measure_battery() {
       #endif
 
       // if (bt_state == BT_STATE_CONNECTED) {
-      //   SerialBT.printf("Bus voltage %.3fv. Unfiltered %.3fv.", battery_voltage, bat_v_samples[BAT_SAMPLES-1]);
-      //   if (bat_voltage_dropping) { SerialBT.printf(" Voltage is dropping. Percentage %.1f%%.", battery_percent); }
-      //   else                      { SerialBT.printf(" Voltage is not dropping. Percentage %.1f%%.", battery_percent); }
-      //   if (battery_state == BATTERY_STATE_DISCHARGING) { SerialBT.printf(" Battery discharging. delay_v %.3fv", bat_delay_v); }
-      //   if (battery_state == BATTERY_STATE_CHARGING) { SerialBT.printf(" Battery charging. delay_v %.3fv", bat_delay_v); }
-      //   if (battery_state == BATTERY_STATE_CHARGED) { SerialBT.print(" Battery is charged."); }
+      //   SerialBT.printf("\nBus voltage %.3fv. Unfiltered %.3fv. Diff %.3f", battery_voltage, bat_v_samples[BAT_SAMPLES-1], bat_delay_diff);
+      //   if (bat_voltage_dropping) { SerialBT.printf("\n Voltage is dropping. Percentage %.1f%%.", battery_percent); }
+      //   else                      { SerialBT.printf("\n Voltage is not dropping. Percentage %.1f%%.", battery_percent); }
+      //   if (battery_state == BATTERY_STATE_DISCHARGING) { SerialBT.printf("\n Battery discharging. delay_v %.3fv\nState change at %.3fv", bat_delay_v, bat_state_change_v); }
+      //   if (battery_state == BATTERY_STATE_CHARGING) { SerialBT.printf("\n Battery charging. delay_v %.3fv\nState change at %.3fv", bat_delay_v, bat_state_change_v); }
+      //   if (battery_state == BATTERY_STATE_CHARGED) { SerialBT.print("\n Battery is charged."); }
       //   SerialBT.print("\n");
       // }
     }
@@ -440,6 +501,7 @@ void measure_battery() {
     pmu_rc++;
     if (pmu_rc%PMU_R_INTERVAL == 0) {
       kiss_indicate_battery();
+      if (pmu_temp_sensor_ready) { kiss_indicate_temperature(); }
     }
   }
 }
@@ -447,17 +509,43 @@ void measure_battery() {
 void update_pmu() {
   if (millis()-last_pmu_update >= pmu_update_interval) {
     measure_battery();
+    measure_temperature();
     last_pmu_update = millis();
   }
 }
 
 bool init_pmu() {
+  #if IS_ESP32S3
+    pmu_temp_sensor_ready = true;
+  #endif
+
   #if BOARD_MODEL == BOARD_RNODE_NG_21 || BOARD_MODEL == BOARD_LORA32_V2_1 || BOARD_MODEL == BOARD_TDECK || BOARD_MODEL == BOARD_T3S3 || BOARD_MODEL == BOARD_TECHO
     pinMode(pin_vbat, INPUT);
     return true;
   #elif BOARD_MODEL == BOARD_HELTEC32_V3
+    // there are three version of V3: V3, V3.1, and V3.2
+    // V3 and V3.1 have a pull up on pin_ctrl and are active low
+    // V3.2 has a transistor and active high
+    // put the pin input mode and read it.  if it's high, we have V3 or V3.1
+    // other wise, it's a V3.2
+    uint16_t pin_ctrl_value;
+    uint8_t pin_ctrl_active = LOW;
+    pinMode(pin_ctrl, INPUT);
+    pin_ctrl_value = digitalRead(pin_ctrl);
+    if(pin_ctrl_value == HIGH) {
+      // We have either a V3 or V3.1
+      pin_ctrl_active = LOW;
+    }
+    else {
+      // We have a V3.2
+      pin_ctrl_active = HIGH;
+    }
     pinMode(pin_ctrl,OUTPUT);
-    digitalWrite(pin_ctrl, LOW);
+    digitalWrite(pin_ctrl, pin_ctrl_active);
+    return true;
+  #elif BOARD_MODEL == BOARD_HELTEC32_V4
+    pinMode(pin_ctrl,OUTPUT);
+    digitalWrite(pin_ctrl, HIGH);
     return true;
   #elif BOARD_MODEL == BOARD_HELTEC_T114
     pinMode(pin_ctrl,OUTPUT);

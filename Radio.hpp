@@ -27,6 +27,8 @@
 #define LORA_PREAMBLE_FAST_DELTA   18
 #define LORA_FAST_THRESHOLD_BPS    30E3
 #define LORA_LIMIT_THRESHOLD_BPS   60E3
+#define LORA_GUARD_THRESHOLD_BPS   14E3
+#define LORA_FAST_GUARD_MS         48
 
 // DCD
 #define STATUS_INTERVAL_MS 3
@@ -52,7 +54,9 @@
 #define CSMA_CW_PER_BAND_WINDOWS   15
 #define CSMA_BAND_1_MAX_AIRTIME    7
 #define CSMA_BAND_N_MIN_AIRTIME    85
-#define CSMA_INFR_THRESHOLD_DB     12
+#define CSMA_INFR_THRESHOLD_DB     11
+#define CSMA_RFENV_RECAL_MS        2500
+#define CSMA_RFENV_RECAL_LIMIT_DB -83
 
 #define LED_ID_TRIG 16
 
@@ -63,6 +67,8 @@
 #define PHY_HEADER_LORA_SYMBOLS 8
 
 #define MODEM_TIMEOUT_MULT 1.5
+
+#define LED_ID_TRIG 16
 
 // Status flags
 const uint8_t SIG_DETECT = 0x01;
@@ -96,9 +102,9 @@ public:
      _dcd_count(0), _dcd(false), _dcd_led(false),
     _dcd_waiting(false), _dcd_sample(0),
     _csma_slot_ms(CSMA_SLOT_MIN_MS),
-    _preambleLength(LORA_PREAMBLE_SYMBOLS_MIN), _lora_symbol_time_ms(0.0),
+    _lora_preamble_symbols(LORA_PREAMBLE_SYMBOLS_MIN), _lora_symbol_time_ms(0.0),
     _lora_preamble_time_ms(0), _lora_header_time_ms(0), _lora_symbol_rate(0.0), _lora_us_per_byte(0.0), _bitrate(0),
-     _packet{0}, _onReceive(NULL), _txp(0), _ldro(false), _limit_rate(false), _interference_detected(false), _avoid_interference(true), _difs_ms(CSMA_SIFS_MS + 2 * _csma_slot_ms), _difs_wait_start(0), _cw_wait_start(0), _cw_wait_target(0), _cw_wait_passed(0), _csma_cw(-1), _cw_band(1), _cw_min(0), _cw_max(CSMA_CW_PER_BAND_WINDOWS), _noise_floor_sampled(false), _noise_floor_sample(0), _noise_floor_buffer({0}), _noise_floor(-292), _led_id_filter(0), _preamble_detected_at(0) {};
+     _packet{0}, _onReceive(NULL), _txp(0), _ldro(false), _lora_limit_rate(false), _interference_detected(false), _avoid_interference(true), _difs_ms(CSMA_SIFS_MS + 2 * _csma_slot_ms), _difs_wait_start(-1), _cw_wait_start(-1), _cw_wait_target(-1), _cw_wait_passed(0), _csma_cw(-1), _cw_band(1), _cw_min(0), _cw_max(CSMA_CW_PER_BAND_WINDOWS), _noise_floor_sampled(false), _noise_floor_sample(0), _noise_floor_buffer({0}), _noise_floor(-292), _led_id_filter(0), _preamble_detected_at(0), _interference_start(0), _interference_persists(0) {};
 
     virtual void reset() = 0;
 
@@ -163,7 +169,8 @@ public:
 			_lora_us_per_byte = 1000000.0/((float)_bitrate/8.0);
 			
 			bool fast_rate   = _bitrate > LORA_FAST_THRESHOLD_BPS;
-			_limit_rate  = _bitrate > LORA_LIMIT_THRESHOLD_BPS;
+			_lora_limit_rate  = _bitrate > LORA_LIMIT_THRESHOLD_BPS;
+            _lora_guard_rate  = (!_lora_limit_rate && _bitrate > LORA_GUARD_THRESHOLD_BPS);
 
 			int csma_slot_min_ms = CSMA_SLOT_MIN_MS;
 			float lora_preamble_target_ms = LORA_PREAMBLE_TARGET_MS;
@@ -180,7 +187,7 @@ public:
 			else { target_preamble_symbols = (ceil)(target_preamble_symbols); }
 			
             setPreambleLength(target_preamble_symbols);
-			_lora_preamble_time_ms = (ceil)(_preambleLength * _lora_symbol_time_ms);
+			_lora_preamble_time_ms = (ceil)(_lora_preamble_symbols * _lora_symbol_time_ms);
 			_lora_header_time_ms   = (ceil)(PHY_HEADER_LORA_SYMBOLS * _lora_symbol_time_ms);
 
 		}
@@ -237,7 +244,7 @@ public:
             lora_symbols += (8*written + PHY_CRC_LORA_BITS - 4*_sf + 8 + PHY_HEADER_LORA_SYMBOLS);
             lora_symbols /=                          4*(_sf-2*_ldro);
             lora_symbols *= getCodingRate4();
-            lora_symbols += _preambleLength + 0.25 + 8;
+            lora_symbols += _lora_preamble_symbols + 0.25 + 8;
             packet_cost_ms += lora_symbols * _lora_symbol_time_ms;
         }
         else if (interfaces[_index] == SX1262 || interfaces[_index] == SX1280) {
@@ -245,14 +252,14 @@ public:
                 lora_symbols += (8*written + PHY_CRC_LORA_BITS - 4*_sf + PHY_HEADER_LORA_SYMBOLS);
                 lora_symbols /=                              4*_sf;
                 lora_symbols *= getCodingRate4();
-                lora_symbols += _preambleLength + 2.25 + 8;
+                lora_symbols += _lora_preamble_symbols + 2.25 + 8;
                 packet_cost_ms += lora_symbols * _lora_symbol_time_ms;
 
             } else {
                 lora_symbols += (8*written + PHY_CRC_LORA_BITS - 4*_sf + 8 + PHY_HEADER_LORA_SYMBOLS);
                 lora_symbols /=                         4*(_sf-2*_ldro);
                 lora_symbols *= getCodingRate4();
-                lora_symbols += _preambleLength + 0.25 + 8;
+                lora_symbols += _lora_preamble_symbols + 0.25 + 8;
                 packet_cost_ms += lora_symbols * _lora_symbol_time_ms;
             }
         }
@@ -266,38 +273,55 @@ public:
         _airtime_bins[nb] = 0;
     };
     void updateModemStatus() {
-      #if MCU_VARIANT == MCU_ESP32
+        #if MCU_VARIANT == MCU_ESP32
         portENTER_CRITICAL(&update_lock);
-      #elif MCU_VARIANT == MCU_NRF52
+        #elif MCU_VARIANT == MCU_NRF52
         portENTER_CRITICAL();
-      #endif
+        #endif
 
-      bool carrier_detected = dcd();
-      int current_rssi = currentRssi();
-      _last_status_update = millis();
+        bool carrier_detected = LoRa->dcd();
+        int current_rssi = LoRa->currentRssi();
+        _last_status_update = millis();
 
-      #if MCU_VARIANT == MCU_ESP32
+        #if MCU_VARIANT == MCU_ESP32
         portEXIT_CRITICAL(&update_lock);
-      #elif MCU_VARIANT == MCU_NRF52
+        #elif MCU_VARIANT == MCU_NRF52
         portEXIT_CRITICAL();
-      #endif
+        #endif
 
-      _interference_detected = !carrier_detected && (current_rssi > (_noise_floor+CSMA_INFR_THRESHOLD_DB));
-      if (_interference_detected) { if (_led_id_filter < LED_ID_TRIG) { _led_id_filter += 1; } }
-      else                       { if (_led_id_filter > 0) {_led_id_filter -= 1; } }
+        #if BOARD_MODEL == BOARD_HELTEC32_V4
+        if (_noise_floor > LNA_GD_THRSHLD)  { _interference_detected = !carrier_detected && (current_rssi > (_noise_floor+CSMA_INFR_THRESHOLD_DB)); }
+        else                               { _interference_detected = !carrier_detected && (current_rssi > LNA_GD_LIMIT); }
+        #else
+        _interference_detected = !carrier_detected && (current_rssi > (_noise_floor+CSMA_INFR_THRESHOLD_DB));
+        #endif
 
-      if (carrier_detected) { _dcd = true; } else { _dcd = false; }
+        if (_interference_detected) { if (_led_id_filter < LED_ID_TRIG) { _led_id_filter += 1; } }
+        else                       { if (_led_id_filter > 0) {_led_id_filter -= 1; } }
 
-      _dcd_led = _dcd;
-      if (_dcd_led) { led_rx_on(); }
-      else {
-        if (_interference_detected) {
-          if (_led_id_filter >= LED_ID_TRIG && _noise_floor_sampled) { led_id_on(); }
-        } else {
-          if (_airtime_lock) { led_indicate_airtime_lock(); }
-          else              { led_rx_off(); led_id_off(); }
+        // Handle potential false interference detection due to
+        // LNA recalibration, antenna swap, moving into new RF
+        // environment or similar.
+        if (_interference_detected && current_rssi < CSMA_RFENV_RECAL_LIMIT_DB) {
+            if (!_interference_persists) { interference_persists = true; _interference_start = millis(); }
+            else {
+                if (millis()-interference_start >= CSMA_RFENV_RECAL_MS) { _noise_floor_sampled = false; _interference_persists = false; }
+            }
+        } else { _interference_persists = false; }
+
+        if (carrier_detected) { _dcd = true; } else { _dcd = false; }
+
+        _dcd_led = _dcd;
+        if (_dcd_led) { led_rx_on(); }
+        else {
+            if (_interference_detected) {
+                if (_led_id_filter >= LED_ID_TRIG && noise_floor_sampled) { led_id_on(); }
+            } else {
+                if (airtime_lock) { led_indicate_airtime_lock(); }
+                else              { led_rx_off(); led_id_off(); }
+            }
         }
-      }
+
     }
     void updateNoiseFloor() {
         int current_rssi = currentRssi();
@@ -373,7 +397,7 @@ public:
     int getCSMASlotMS() { return _csma_slot_ms; };
     float getSymbolTime() { return _lora_symbol_time_ms; };
     float getSymbolRate() { return _lora_symbol_rate; };
-    long getPreambleLength() { return _preambleLength; };
+    long getPreambleLength() { return _lora_preamble_symbols; };
     void setAvdInterference(bool cfg) { _avoid_interference = cfg; };
     bool getAvdInterference() { return _avoid_interference; };
     bool getInterference() { return _interference_detected; };
@@ -393,7 +417,8 @@ public:
     void addCWWaitPassed(unsigned long start) { _cw_wait_passed += start; };
     void resetCWWaitPassed() { _cw_wait_passed = 0; };
     bool getCWWaitStatus() { return _cw_wait_passed < _cw_wait_target; };
-    bool getLimitRate() { return _limit_rate; };
+    bool getLimitRate() { return _lora_limit_rate; };
+    bool getGuardRate() { return _lora_limit_rate; };
 protected:
     virtual void explicitHeaderMode() = 0;
     virtual void implicitHeaderMode() = 0;
@@ -426,14 +451,15 @@ protected:
     bool _dcd_waiting;
 	bool _util_samples[DCD_SAMPLES] = {false};
 	int _dcd_sample;
-    long _preambleLength;
+    long _lora_preamble_symbols;
+    long _lora_preamble_time_ms;
+    float _lora_header_time_ms;
     float _lora_symbol_time_ms;
     float _lora_symbol_rate;
     float _lora_us_per_byte;
-    long _lora_preamble_time_ms;
-    long _lora_header_time_ms;
-    bool _ldro;
-    bool _limit_rate;
+    bool _lora_low_datarate;
+    bool _lora_limit_rate;
+    bool _lora_guard_rate;
     bool _interference_detected;
     bool _avoid_interference;
     int _csma_slot_ms;
@@ -452,6 +478,8 @@ protected:
     int _noise_floor;
     uint8_t _led_id_filter;
     unsigned long _preamble_detected_at;
+    uint32_t _interference_start;
+    bool _interference_persists;
 
     uint8_t _packet[255];
     void (*_onReceive)(uint8_t, int);

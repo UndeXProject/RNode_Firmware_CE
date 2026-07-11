@@ -42,6 +42,17 @@
 	bool bt_enabled = false;
 	bool bt_allow_pairing = false;
 
+	#define WR_CHANNEL_DEFAULT 1
+	#define WR_WIFI_OFF        0x00
+	#define WR_WIFI_STA        0x01
+	#define WR_WIFI_AP         0x02
+	#define WR_STATE_NA        0xff
+	#define WR_STATE_OFF       0x00
+	#define WR_STATE_ON        0x01
+	#define WR_STATE_CONNECTED 0x02
+	uint8_t wr_state = WR_STATE_OFF;
+	uint8_t wr_channel = WR_CHANNEL_DEFAULT;
+
 	#define M_FRQ_S 27388122
 	#define M_FRQ_R 27388061
 	bool console_active = false;
@@ -54,6 +65,7 @@
 	#define CMD_L      64
 
 	#define eeprom_addr(a) (a+EEPROM_OFFSET)
+	#define config_addr(a) (a+CONFIG_OFFSET)
 
     #define PA_OUTPUT_RFO_PIN      0
     #define PA_OUTPUT_PA_BOOST_PIN 1
@@ -79,12 +91,15 @@
 	uint8_t model     = 0x00;
 	uint8_t hwrev     = 0x00;
 
+	#define NOISE_FLOOR_SAMPLES 128
+	int     noise_floor     = -292;
     int     current_rssi    = -292;
 	int		last_rssi		= -292;
 	uint8_t last_rssi_raw   = 0x00;
 	uint8_t last_snr_raw	= 0x80;
 	uint8_t seq[INTERFACE_COUNT];
 	uint16_t read_len[INTERFACE_COUNT];
+	uint16_t host_write_len = [INTERFACE_COUNT];
 
     bool serial_in_frame = false;
 

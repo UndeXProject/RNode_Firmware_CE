@@ -21,8 +21,8 @@
 #if DISPLAY == OLED
 #include <Wire.h>
 #include <Adafruit_SSD1306.h>
-#define DISPLAY_BLACK SSD1306_BLACK
-#define DISPLAY_WHITE SSD1306_WHITE
+#define DISPLAY_BLACK DISPLAY_BLACK
+#define DISPLAY_WHITE DISPLAY_WHITE
 
 #elif DISPLAY == EINK_BW || DISPLAY == EINK_3C
 void (*display_callback)();
@@ -97,6 +97,11 @@ void busyCallback(const void* p) { display_callback(); }
   #define SCL_OLED 17
   #define SDA_OLED 18
   #endif
+#elif BOARD_MODEL == BOARD_HELTEC32_V4
+  #define DISP_RST 21
+  #define DISP_ADDR 0x3C
+  #define SCL_OLED 18
+  #define SDA_OLED 17
 #elif BOARD_MODEL == BOARD_RAK4631 || BOARD_MODEL == BOARD_OPENCOM_XL
   #if DISPLAY == OLED
   // RAK1921/SSD1306
@@ -220,7 +225,8 @@ uint8_t online_interfaces = 0;
 #define WATERFALL_SIZE 46
 
 int waterfall[INTERFACE_COUNT][WATERFALL_SIZE] = {0};
-int waterfall_head[INTERFACE_COUNT] = {0};
+int waterfall_meta[INTERFACE_COUNT][WATERFALL_SIZE] = {0};
+int waterfall_head[INTERFACE_COUNT] = 0;
 
 int p_ad_x = 0;
 int p_ad_y = 0;
@@ -229,6 +235,25 @@ int p_as_y = 0;
 
 GFXcanvas1 stat_area(64, 64);
 GFXcanvas1 disp_area(64, 64);
+
+static const uint8_t one_counts[256] = {
+  0,  1,  0,  0,  0,  0,  0,  0,  0,  0,  1,  2,  1,  1,  1,  1,
+  1,  1,  1,  1,  0,  1,  0,  0,  0,  0,  0,  0,  0,  0,  0,  1,
+  0,  0,  0,  0,  0,  0,  0,  0,  0,  1,  0,  0,  0,  0,  0,  0,
+  0,  0,  0,  1,  0,  0,  0,  0,  0,  0,  0,  0,  0,  1,  0,  0,
+  0,  0,  0,  0,  0,  0,  0,  1,  0,  0,  0,  0,  0,  0,  0,  0,
+  0,  1,  0,  0,  0,  0,  0,  0,  0,  0,  0,  1,  0,  0,  0,  0,
+  0,  0,  0,  0,  1,  2,  1,  1,  1,  1,  1,  1,  1,  1,  2,  3,
+  2,  2,  2,  2,  2,  2,  2,  2,  1,  2,  1,  1,  1,  1,  1,  1,
+  1,  1,  1,  2,  1,  1,  1,  1,  1,  1,  1,  1,  1,  2,  1,  1,
+  1,  1,  1,  1,  1,  1,  1,  2,  1,  1,  1,  1,  1,  1,  1,  1,
+  1,  2,  1,  1,  1,  1,  1,  1,  1,  1,  1,  2,  1,  1,  1,  1,
+  1,  1,  1,  1,  1,  2,  1,  1,  1,  1,  1,  1,  1,  1,  1,  2,
+  1,  1,  1,  1,  1,  1,  1,  1,  0,  1,  0,  0,  0,  0,  0,  0,
+  0,  0,  1,  2,  1,  1,  1,  1,  1,  1,  1,  1,  0,  1,  0,  0,
+  0,  0,  0,  0,  0,  0,  0,  1,  0,  0,  0,  0,  0,  0,  0,  0,
+  0,  1,  0,  0,  0,  0,  0,  0,  0,  0,  0,  1,  0,  0,  0,  0
+};
 
 void fillRect(int16_t x, int16_t y, int16_t width, int16_t height, uint16_t colour);
 
@@ -330,6 +355,18 @@ bool display_init() {
     #elif BOARD_MODEL == BOARD_HELTEC32_V2
       Wire.begin(SDA_OLED, SCL_OLED);
     #elif BOARD_MODEL == BOARD_HELTEC32_V3
+      // enable vext / pin 36
+      pinMode(Vext, OUTPUT);
+      digitalWrite(Vext, LOW);
+      delay(50);
+      int pin_display_en = 21;
+      pinMode(pin_display_en, OUTPUT);
+      digitalWrite(pin_display_en, LOW);
+      delay(50);
+      digitalWrite(pin_display_en, HIGH);
+      delay(50);
+      Wire.begin(SDA_OLED, SCL_OLED);
+    #elif BOARD_MODEL == BOARD_HELTEC32_V4
       // enable vext / pin 36
       pinMode(Vext, OUTPUT);
       digitalWrite(Vext, LOW);
@@ -473,6 +510,15 @@ bool display_init() {
           #elif BOARD_MODEL == BOARD_HELTEC32_V2
             disp_mode = DISP_MODE_PORTRAIT;
             display.setRotation(1);
+          #elif BOARD_MODEL == BOARD_HELTEC32_V3
+            disp_mode = DISP_MODE_PORTRAIT;
+            display.setRotation(1);
+          #elif BOARD_MODEL == BOARD_HELTEC32_V4
+            disp_mode = DISP_MODE_PORTRAIT;
+            display.setRotation(1);
+          #elif BOARD_MODEL == BOARD_HELTEC_T114
+            disp_mode = DISP_MODE_PORTRAIT;
+            display.setRotation(1);
           #elif BOARD_MODEL == BOARD_RAK4631 || BOARD_MODEL == BOARD_OPENCOM_XL
             #if DISPLAY == OLED
             #elif DISPLAY == EINK_BW || DISPLAY == EINK_3C
@@ -481,12 +527,6 @@ bool display_init() {
           #elif BOARD_MODEL == BOARD_TECHO
             disp_mode = DISP_MODE_LANDSCAPE;
             display.setRotation(3);
-          #elif BOARD_MODEL == BOARD_HELTEC32_V3
-            disp_mode = DISP_MODE_PORTRAIT;
-            display.setRotation(1);
-          #elif BOARD_MODEL == BOARD_RAK4631 || BOARD_MODEL == BOARD_OPENCOM_XL
-            disp_mode = DISP_MODE_LANDSCAPE;
-            display.setRotation(0);
           #elif BOARD_MODEL == BOARD_TDECK
             disp_mode = DISP_MODE_PORTRAIT;
             display.setRotation(3);
@@ -597,12 +637,35 @@ void drawBitmap(int16_t startX, int16_t startY, const uint8_t* bitmap, int16_t b
   #endif
 }
 
+extern uint8_t wifi_mode;
+extern bool wifi_is_connected();
+extern bool wifi_host_is_connected();
 void draw_cable_icon(int px, int py) {
-  if (cable_state == CABLE_STATE_DISCONNECTED) {
-      stat_area.drawBitmap(px, py, bm_cable+0*32, 16, 16, DISPLAY_WHITE, DISPLAY_BLACK);
-  } else if (cable_state == CABLE_STATE_CONNECTED) {
-      stat_area.drawBitmap(px, py, bm_cable+1*32, 16, 16, DISPLAY_WHITE, DISPLAY_BLACK);
-  }
+  #if HAS_WIFI
+    if (wifi_mode == WR_WIFI_OFF) {
+      if      (cable_state == CABLE_STATE_DISCONNECTED) { stat_area.drawBitmap(px, py, bm_cable+0*32, 16, 16, DISPLAY_WHITE, DISPLAY_BLACK); }
+      else if (cable_state == CABLE_STATE_CONNECTED)    { stat_area.drawBitmap(px, py, bm_cable+1*32, 16, 16, DISPLAY_WHITE, DISPLAY_BLACK); }
+    } else {
+      if (wifi_mode == WR_WIFI_STA) {
+        if (wifi_is_connected()) {
+          stat_area.drawBitmap(px, py, bm_wifi+3*32, 16, 16, DISPLAY_WHITE, DISPLAY_BLACK);
+          if (!wifi_host_is_connected()) { stat_area.fillRect(px+5, py+12, 6, 3, DISPLAY_BLACK); }
+        } else { stat_area.drawBitmap(px, py, bm_wifi+2*32, 16, 16, DISPLAY_WHITE, DISPLAY_BLACK); }
+      
+      } else if (wifi_mode == WR_WIFI_AP) {
+        if (wifi_host_is_connected()) { stat_area.drawBitmap(px, py, bm_wifi+1*32, 16, 16, DISPLAY_WHITE, DISPLAY_BLACK); }
+        else                          { stat_area.drawBitmap(px, py, bm_wifi+0*32, 16, 16, DISPLAY_WHITE, DISPLAY_BLACK); }
+      
+      } else {
+        if      (cable_state == CABLE_STATE_DISCONNECTED) { stat_area.drawBitmap(px, py, bm_cable+0*32, 16, 16, DISPLAY_WHITE, DISPLAY_BLACK); }
+        else if (cable_state == CABLE_STATE_CONNECTED)    { stat_area.drawBitmap(px, py, bm_cable+1*32, 16, 16, DISPLAY_WHITE, DISPLAY_BLACK); }
+      }
+    }
+
+  #else
+  if      (cable_state == CABLE_STATE_DISCONNECTED) { stat_area.drawBitmap(px, py, bm_cable+0*32, 16, 16, DISPLAY_WHITE, DISPLAY_BLACK); }
+  else if (cable_state == CABLE_STATE_CONNECTED)    { stat_area.drawBitmap(px, py, bm_cable+1*32, 16, 16, DISPLAY_WHITE, DISPLAY_BLACK); }
+  #endif
 }
 
 void draw_bt_icon(int px, int py) {
@@ -666,6 +729,9 @@ void draw_battery_bars(int px, int py) {
         }
         
         if (battery_state == BATTERY_STATE_CHARGING && !disable_charge_status) {
+          float battery_prog = battery_percent;
+          if (battery_prog > 85) { battery_prog = 84; }
+          if (charge_tick < battery_prog ) { charge_tick = battery_prog; }
           battery_value = charge_tick;
           charge_tick += 3;
           if (charge_tick > 100) charge_tick = 0;
@@ -769,6 +835,9 @@ void draw_signal_bars(int px, int py) {
 #define WF_RSSI_MIN -135
 #define WF_RSSI_SPAN (WF_RSSI_MAX - WF_RSSI_MIN)
 #define WF_PIXEL_WIDTH 10
+#define WF_M_RX   0x00
+#define WF_M_TX   0x01
+#define WF_M_NTFR 0x02
 void draw_waterfall(int px, int py) {
   int rssi_val = interface_obj[interface_page]->currentRssi();
   if (rssi_val < WF_RSSI_MIN) rssi_val = WF_RSSI_MIN;
@@ -776,11 +845,17 @@ void draw_waterfall(int px, int py) {
   int rssi_normalised = ((rssi_val - WF_RSSI_MIN)*(1.0/WF_RSSI_SPAN))*WF_PIXEL_WIDTH;
   if (display_tx[interface_page]) {
     for (uint8_t i; i < WF_TX_SIZE; i++) {
+      waterfall_meta[waterfall_head[interface_page]] = WF_M_TX;
       waterfall[interface_page][waterfall_head[interface_page]++] = -1;
       if (waterfall_head[interface_page] >= WATERFALL_SIZE) waterfall_head[interface_page] = 0;
     }
     display_tx[interface_page] = false;
   } else {
+    waterfall[interface_page][waterfall_head[interface_page]++] = rssi_normalised;
+    if (waterfall_head[interface_page] >= WATERFALL_SIZE) waterfall_head[interface_page] = 0;
+
+    if (interface_obj->getInterference()) { waterfall_meta[interface_page][waterfall_head[interface_page]] = WF_M_NTFR; }
+    else                       { waterfall_meta[interface_page][waterfall_head[interface_page]] = WF_M_RX; }
     waterfall[interface_page][waterfall_head[interface_page]++] = rssi_normalised;
     if (waterfall_head[interface_page] >= WATERFALL_SIZE) waterfall_head[interface_page] = 0;
   }
@@ -791,6 +866,16 @@ void draw_waterfall(int px, int py) {
     int ws = waterfall[interface_page][wi];
     if (ws > 0) {
       stat_area.drawLine(px, py+i, px+ws-1, py+i, DISPLAY_WHITE);
+
+    int wi = (waterfall_head[interface_page]+i)%WATERFALL_SIZE;
+    int ws = waterfall[interface_page][wi];
+    int wm = waterfall_meta[wi];
+    if (ws > 0) {
+      if      (wm == WF_M_RX)   { stat_area.drawLine(px, py+i, px+ws-1, py+i, DISPLAY_WHITE); }
+      else if (wm == WF_M_NTFR) {
+        uint8_t o = 0;
+        for (uint8_t ti = 0; ti < WF_PIXEL_WIDTH/2; ti++) { stat_area.drawPixel(px+ti*2+o, py+i, DISPLAY_WHITE); }
+      }
     } else if (ws == -1) {
       uint8_t o = i%2;
       for (uint8_t ti = 0; ti < WF_PIXEL_WIDTH/2; ti++) {
@@ -888,9 +973,14 @@ void update_stat_area() {
   }
 }
 
+#define START_PAGE 0
+const uint8_t pages = 3;
+uint8_t disp_page = START_PAGE;
 extern char bt_devname[11];
 extern char bt_dh[16];
-
+#if HAS_WIFI
+  extern IPAddress wr_device_ip;
+#endif
 void draw_disp_area() {
   if (!device_init_done || firmware_update_mode) {
     uint8_t p_by = 37;
@@ -903,11 +993,8 @@ void draw_disp_area() {
   } else {
     if (!disp_ext_fb or bt_ssp_pin != 0) {
       if (radio_online && display_diagnostics) {
-
         disp_area.fillRect(0,8,disp_area.width(),37, DISPLAY_BLACK); disp_area.fillRect(0,37,disp_area.width(),27, DISPLAY_WHITE); 
-
         disp_area.setFont(SMALL_FONT); disp_area.setTextWrap(false); disp_area.setTextColor(DISPLAY_WHITE); disp_area.setTextSize(1);
-
         selected_radio = interface_obj[online_interface_list[interface_page]];
 
         disp_area.setCursor(2, 13);
@@ -977,10 +1064,34 @@ void draw_disp_area() {
         disp_area.setCursor(4, 5); disp_area.print(bt_devname);
 
       } else {
-        if (device_signatures_ok()) {
-          disp_area.drawBitmap(0, 0, bm_def_lc, disp_area.width(), 37, DISPLAY_WHITE, DISPLAY_BLACK);      
+        if (device_signatures_ok()) { disp_area.drawBitmap(0, 0, bm_def_lc, disp_area.width(), 37, DISPLAY_WHITE, DISPLAY_BLACK); }
+        else {                        disp_area.drawBitmap(0, 0, bm_def,    disp_area.width(), 37, DISPLAY_WHITE, DISPLAY_BLACK); }
+
+        bool display_ip = false;
+        #if HAS_WIFI
+          if (wifi_is_connected() && disp_page%2 == 1) { display_ip = true; }
+        #endif
+        if (display_ip) {
+          #if HAS_WIFI
+            uint8_t ones = 3+one_counts[wr_device_ip[0]]+one_counts[wr_device_ip[1]]+one_counts[wr_device_ip[2]]+one_counts[wr_device_ip[3]];
+            uint8_t chars = 7;
+            for (uint8_t i = 0; i<4; i++) { if (wr_device_ip[i] > 9) { chars++; } if (wr_device_ip[i] > 99) { chars++; } }
+            uint8_t width = chars*6-(ones*4);
+            int alignment_offset = disp_area.width()-width;
+            int ipxpos = alignment_offset;
+            disp_area.setFont(SMALL_FONT); disp_area.setTextWrap(false); disp_area.setTextColor(DISPLAY_WHITE); disp_area.setTextSize(1);
+            disp_area.fillRect(0, 20, disp_area.width(), 17, DISPLAY_BLACK);
+            disp_area.setCursor(3, 34-8); disp_area.print("WiFi IP:");
+            disp_area.setCursor(ipxpos, 34); disp_area.print(wr_device_ip);
+          #endif
         } else {
-          disp_area.drawBitmap(0, 0, bm_def, disp_area.width(), 37, DISPLAY_WHITE, DISPLAY_BLACK);      
+          disp_area.setFont(SMALL_FONT); disp_area.setTextWrap(false); disp_area.setTextColor(DISPLAY_WHITE); disp_area.setTextSize(2);
+          disp_area.fillRect(0, 20, disp_area.width(), 17, DISPLAY_BLACK); uint8_t ofsc = 0;
+          if ((bt_dh[14] & 0b00001111) == 0x01) { ofsc += 8; }
+          if ((bt_dh[14] >> 4)         == 0x01) { ofsc += 8; }
+          if ((bt_dh[15] & 0b00001111) == 0x01) { ofsc += 8; }
+          if ((bt_dh[15] >> 4)         == 0x01) { ofsc += 8; }
+          disp_area.setCursor(17+ofsc, 32); disp_area.printf("%02X%02X", bt_dh[14], bt_dh[15]);
         }
 
         // display device ID beneath header

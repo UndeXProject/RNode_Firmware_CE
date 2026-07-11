@@ -47,12 +47,13 @@ You must have at least version `2.1.3` of `rnodeconf` installed to update your R
 | LilyGo T3S3 v1.0 | [Buy here](https://lilygo.cc/products/t3s3-v1-0) | SX1262 or SX1276 or SX1280 | ESP32-S3 |
 | LilyGo T-Echo | [Buy here](https://lilygo.cc/products/t-echo-lilygo) | SX1262 | nRF52 |
 | Heltec T114 v2.0 | [Buy here](https://heltec.org/project/mesh-node-t114/) | SX1262 | nRF52 |
+| SeeedStudio XIAO ESP32-S3 (w/ Wio - SX1262) | [Buy here](https://www.seeedstudio.com/XIAO-ESP32S3-p-5627.html) | SX1262 | ESP32-S3 |
 | Homebrew ESP32 boards | | Any supported | ESP32 | This can be any board with an Adafruit Feather (or generic) ESP32 chip |
+<!--| LilyGO T-Deck | [Buy here](https://lilygo.cc/products/t-deck) | SX1262 | ESP32-S3 |-->
+<!--| Heltec Wireless Paper | [Buy here](https://heltec.org/project/wireless-paper/) | SX1262 | ESP32-S3 | -->
 
 It's easy to create your own RNodes from one of the supported development boards and devices. If a device or board you want to use is not yet supported, you are welcome to [join the effort](Documentation/CONTRIBUTING.md) and help create a board definition and pin mapping for it!
 
-<!--| LilyGO T-Deck | [Buy here](https://lilygo.cc/products/t-deck) | SX1262 | ESP32-S3 |-->
-<!--| Heltec Wireless Paper | [Buy here](https://heltec.org/project/wireless-paper/) | SX1262 | ESP32-S3 | -->
 
 <!--<img src="Documentation/images/devboards_1.webp" width="100%"/>-->
 
@@ -93,8 +94,6 @@ While **speeds are lower** than WiFi, typical communication **ranges are many ti
 If you notice the presence of a circularity in the naming of the system as a whole, and the physical devices, it is no coincidence. Every RNode contains the seeds necessary to reproduce the system, the [RNode Bootstrap Console](https://unsigned.io/rnode_bootstrap_console), which is hosted locally on every RNode, and can be activated and accesses at any time - no Internet required.
 
 The designs, guides and software stored within allows users to create more RNodes, and even to bootstrap entire communications networks, completely independently of existing infrastructure, or in situations where infrastructure has become unreliable or is broken.
-
-<img src="Documentation/images/126dcfe92fb7.webp" width="100%"/>
 
 <center><i>Where there is no Internet, RNodes will still communicate</i></center><br/><br/>
 
@@ -144,12 +143,14 @@ You can help support the continued development of open, free and private communi
   ```
 - Bitcoin
   ```
-  bc1p4a6axuvl7n9hpapfj8sv5reqj8kz6uxa67d5en70vzrttj0fmcusgxsfk5
+  bc1pgqgu8h8xvj4jtafslq396v7ju7hkgymyrzyqft4llfslz5vp99psqfk3a6
   ```
 - Ethereum
   ```
-  0xae89F3B94fC4AD6563F0864a55F9a697a90261ff
+  0x91C421DdfB8a30a49A71d63447ddb54cEBe3465E
   ```
+- Liberapay: https://liberapay.com/Reticulum/
+
 - Ko-Fi: https://ko-fi.com/markqvist
 
 ## FAQ

@@ -54,6 +54,10 @@ uint8_t eeprom_read(uint32_t mapped_addr);
   #include "Bluetooth.h"
 #endif
 
+#if HAS_WIFI == true
+  #include "Remote.h"
+#endif
+
 #if HAS_PMU == true
   #include "Power.h"
 #endif
@@ -70,8 +74,8 @@ uint8_t eeprom_read(uint32_t mapped_addr);
 	#include "Device.h"
 #endif
 #if MCU_VARIANT == MCU_ESP32
+  //https://github.com/espressif/esp-idf/issues/8855
   #if BOARD_MODEL == BOARD_HELTEC32_V3
-    //https://github.com/espressif/esp-idf/issues/8855
     #include "hal/wdt_hal.h"
 	#elif BOARD_MODEL == BOARD_T3S3
 		#include "hal/wdt_hal.h"
@@ -289,6 +293,13 @@ uint8_t boot_vector = 0x00;
 			void led_id_on()  { }
 			void led_id_off() { }
 	#elif BOARD_MODEL == BOARD_H_W_PAPER
+			void led_rx_on()  { digitalWrite(pin_led_rx, HIGH); }
+			void led_rx_off() {	digitalWrite(pin_led_rx, LOW); }
+			void led_tx_on()  { digitalWrite(pin_led_tx, HIGH); }
+			void led_tx_off() { digitalWrite(pin_led_tx, LOW); }
+			void led_id_on()  { }
+			void led_id_off() { }
+	#elif BOARD_MODEL == BOARD_HELTEC32_V4
 			void led_rx_on()  { digitalWrite(pin_led_rx, HIGH); }
 			void led_rx_off() {	digitalWrite(pin_led_rx, LOW); }
 			void led_tx_on()  { digitalWrite(pin_led_tx, HIGH); }
@@ -745,7 +756,12 @@ void sort_interfaces() {
 void serial_write(uint8_t byte) {
 	#if HAS_BLUETOOTH || HAS_BLE == true
 		if (bt_state != BT_STATE_CONNECTED) {
-			Serial.write(byte);
+			#if HAS_WIFI
+				if (wifi_host_is_connected()) { wifi_remote_write(byte); }
+				else                          { Serial.write(byte); }
+			#else
+				Serial.write(byte);
+			#endif
 		} else {
 			SerialBT.write(byte);
       #if MCU_VARIANT == MCU_NRF52 && HAS_BLE
@@ -1027,6 +1043,19 @@ void kiss_indicate_battery() {
 		serial_write(FEND);
 }
 
+void kiss_indicate_temperature() {
+	#if HAS_PMU
+		#if MCU_VARIANT == MCU_ESP32
+			float pmu_temp = pmu_temperature+PMU_TEMP_OFFSET;
+			uint8_t temp = (uint8_t)pmu_temp;
+			serial_write(FEND);
+			serial_write(CMD_STAT_TEMP);
+			escaped_serial_write(pmu_temp);
+			serial_write(FEND);
+		#endif
+	#endif
+}
+
 void kiss_indicate_btpin() {
 	#if HAS_BLUETOOTH || HAS_BLE == true
 		serial_write(FEND);
@@ -1296,11 +1325,111 @@ void setTXPower(RadioInterface* radio, int txp) {
     if (model == MODEL_FF) radio->setTxPower(txp, PA_OUTPUT_RFO_PIN);
 }
 
+<<<<<<< HEAD
 uint8_t getRandom(RadioInterface* radio) {
 	if (radio->getRadioOnline()) {
 		return radio->random();
 	} else {
 		return 0x00;
+=======
+#if HAS_LORA_PA
+	const int tx_gain[PA_GAIN_POINTS] = {PA_GAIN_VALUES};
+#endif
+
+int map_target_power_to_modem_output(int target_tx_power) {
+	#if HAS_LORA_PA
+		int modem_output_dbm = -9;
+		for (int i = 0; i < PA_GAIN_POINTS; i++) {
+			int gain = tx_gain[i];
+			int effective_output_dbm = i + gain;
+			if (effective_output_dbm > target_tx_power) {
+				int diff = effective_output_dbm - target_tx_power;
+				modem_output_dbm = -1*diff;
+				break;
+			} else if (effective_output_dbm == target_tx_power) {
+				modem_output_dbm = i; break;
+			} else if (i == PA_GAIN_POINTS-1) {
+				int diff = target_tx_power - effective_output_dbm;
+				modem_output_dbm = i+diff; break;
+			}
+		}
+	#else
+		int modem_output_dbm = target_tx_power;
+	#endif
+	
+	return modem_output_dbm;
+}
+
+int map_modem_output_to_target_power(int modem_output_dbm) {
+	#if HAS_LORA_PA
+		if (modem_output_dbm < 0)               { modem_output_dbm = 0; }
+		if (modem_output_dbm >= PA_GAIN_POINTS) { modem_output_dbm = PA_GAIN_POINTS-1; }
+		int gain = tx_gain[modem_output_dbm];
+		int target_tx_power = modem_output_dbm+gain;
+	#else
+		int target_tx_power = modem_output_dbm;
+	#endif
+
+	return target_tx_power;
+}
+
+void setTXPower() {
+	if (radio_online) {
+		int mapped_lora_txp = map_target_power_to_modem_output(lora_txp);
+		
+		#if HAS_LORA_PA
+			int real_lora_txp = map_modem_output_to_target_power(mapped_lora_txp);
+			lora_txp = real_lora_txp;
+		#endif
+
+		if (model == MODEL_11) LoRa->setTxPower(mapped_lora_txp, PA_OUTPUT_RFO_PIN);
+		if (model == MODEL_12) LoRa->setTxPower(mapped_lora_txp, PA_OUTPUT_RFO_PIN);
+
+		if (model == MODEL_C6) LoRa->setTxPower(mapped_lora_txp, PA_OUTPUT_RFO_PIN);
+    if (model == MODEL_C7) LoRa->setTxPower(mapped_lora_txp, PA_OUTPUT_RFO_PIN);
+
+		if (model == MODEL_A1) LoRa->setTxPower(mapped_lora_txp, PA_OUTPUT_PA_BOOST_PIN);
+		if (model == MODEL_A2) LoRa->setTxPower(mapped_lora_txp, PA_OUTPUT_PA_BOOST_PIN);
+		if (model == MODEL_A3) LoRa->setTxPower(mapped_lora_txp, PA_OUTPUT_RFO_PIN);
+		if (model == MODEL_A4) LoRa->setTxPower(mapped_lora_txp, PA_OUTPUT_RFO_PIN);
+		if (model == MODEL_A5) LoRa->setTxPower(mapped_lora_txp, PA_OUTPUT_PA_BOOST_PIN);
+		if (model == MODEL_A6) LoRa->setTxPower(mapped_lora_txp, PA_OUTPUT_PA_BOOST_PIN);
+		if (model == MODEL_A7) LoRa->setTxPower(mapped_lora_txp, PA_OUTPUT_PA_BOOST_PIN);
+		if (model == MODEL_A8) LoRa->setTxPower(mapped_lora_txp, PA_OUTPUT_PA_BOOST_PIN);
+		if (model == MODEL_A9) LoRa->setTxPower(mapped_lora_txp, PA_OUTPUT_PA_BOOST_PIN);
+		if (model == MODEL_AA) LoRa->setTxPower(mapped_lora_txp, PA_OUTPUT_PA_BOOST_PIN);
+		if (model == MODEL_AC) LoRa->setTxPower(mapped_lora_txp, PA_OUTPUT_PA_BOOST_PIN);
+
+		if (model == MODEL_BA) LoRa->setTxPower(mapped_lora_txp, PA_OUTPUT_PA_BOOST_PIN);
+		if (model == MODEL_BB) LoRa->setTxPower(mapped_lora_txp, PA_OUTPUT_PA_BOOST_PIN);
+		if (model == MODEL_B3) LoRa->setTxPower(mapped_lora_txp, PA_OUTPUT_PA_BOOST_PIN);
+		if (model == MODEL_B4) LoRa->setTxPower(mapped_lora_txp, PA_OUTPUT_PA_BOOST_PIN);
+		if (model == MODEL_B8) LoRa->setTxPower(mapped_lora_txp, PA_OUTPUT_PA_BOOST_PIN);
+		if (model == MODEL_B9) LoRa->setTxPower(mapped_lora_txp, PA_OUTPUT_PA_BOOST_PIN);
+
+		if (model == MODEL_C4) LoRa->setTxPower(mapped_lora_txp, PA_OUTPUT_PA_BOOST_PIN);
+		if (model == MODEL_C9) LoRa->setTxPower(mapped_lora_txp, PA_OUTPUT_PA_BOOST_PIN);
+		if (model == MODEL_C5) LoRa->setTxPower(mapped_lora_txp, PA_OUTPUT_PA_BOOST_PIN);
+		if (model == MODEL_CA) LoRa->setTxPower(mapped_lora_txp, PA_OUTPUT_PA_BOOST_PIN);
+		if (model == MODEL_C8) LoRa->setTxPower(mapped_lora_txp, PA_OUTPUT_PA_BOOST_PIN);
+
+		if (model == MODEL_D4) LoRa->setTxPower(mapped_lora_txp, PA_OUTPUT_PA_BOOST_PIN);
+		if (model == MODEL_D9) LoRa->setTxPower(mapped_lora_txp, PA_OUTPUT_PA_BOOST_PIN);
+
+		if (model == MODEL_DB) LoRa->setTxPower(mapped_lora_txp, PA_OUTPUT_PA_BOOST_PIN);
+		if (model == MODEL_DC) LoRa->setTxPower(mapped_lora_txp, PA_OUTPUT_PA_BOOST_PIN);
+
+		if (model == MODEL_DD) LoRa->setTxPower(mapped_lora_txp, PA_OUTPUT_PA_BOOST_PIN);
+		if (model == MODEL_DE) LoRa->setTxPower(mapped_lora_txp, PA_OUTPUT_PA_BOOST_PIN);
+
+		if (model == MODEL_E4) LoRa->setTxPower(mapped_lora_txp, PA_OUTPUT_PA_BOOST_PIN);
+		if (model == MODEL_E9) LoRa->setTxPower(mapped_lora_txp, PA_OUTPUT_PA_BOOST_PIN);
+		if (model == MODEL_E3) LoRa->setTxPower(mapped_lora_txp, PA_OUTPUT_PA_BOOST_PIN);
+		if (model == MODEL_E8) LoRa->setTxPower(mapped_lora_txp, PA_OUTPUT_PA_BOOST_PIN);
+
+		if (model == MODEL_FE) LoRa->setTxPower(mapped_lora_txp, PA_OUTPUT_PA_BOOST_PIN);
+		if (model == MODEL_FF) LoRa->setTxPower(mapped_lora_txp, PA_OUTPUT_RFO_PIN);
+>>>>>>> upstream/master
 	}
 }
 
@@ -1440,10 +1569,26 @@ void eeprom_dump_all() {
 	}
 }
 
+void eeprom_config_dump_all() {
+	#if MCU_VARIANT == MCU_ESP32
+		for (int addr = 0; addr < CONFIG_SIZE; addr++) {
+	    uint8_t byte = EEPROM.read(config_addr(addr));
+			escaped_serial_write(byte);
+		}
+	#endif
+}
+
 void kiss_dump_eeprom() {
 	serial_write(FEND);
 	serial_write(CMD_ROM_READ);
 	eeprom_dump_all();
+	serial_write(FEND);
+}
+
+void kiss_dump_config() {
+	serial_write(FEND);
+	serial_write(CMD_CFG_READ);
+	eeprom_config_dump_all();
 	serial_write(FEND);
 }
 
@@ -1515,8 +1660,15 @@ bool eeprom_product_valid() {
     uint8_t rval = eeprom_read(eeprom_addr(ADDR_PRODUCT));
   #endif
 
+<<<<<<< HEAD
 	#if PLATFORM == PLATFORM_ESP32
 	if (rval == PRODUCT_RNODE || rval == BOARD_RNODE_NG_20 || rval == BOARD_RNODE_NG_21 || rval == PRODUCT_HMBRW || rval == PRODUCT_TBEAM || rval == PRODUCT_T32_10 || rval == PRODUCT_T32_20 || rval == PRODUCT_T32_21 || rval == PRODUCT_H32_V2 || rval == PRODUCT_H32_V3 || rval == PRODUCT_TDECK_V1 || rval == PRODUCT_TBEAM_S_V1 || rval == PRODUCT_H_W_PAPER || rval == PRODUCT_XIAO_S3) {
+=======
+	#if PLATFORM == PLATFORM_AVR
+	if (rval == PRODUCT_RNODE || rval == PRODUCT_HMBRW) {
+	#elif PLATFORM == PLATFORM_ESP32
+	if (rval == PRODUCT_RNODE || rval == BOARD_RNODE_NG_20 || rval == BOARD_RNODE_NG_21 || rval == PRODUCT_HMBRW || rval == PRODUCT_TBEAM || rval == PRODUCT_T32_10 || rval == PRODUCT_T32_20 || rval == PRODUCT_T32_21 || rval == PRODUCT_H32_V2 || rval == PRODUCT_H32_V3 || rval == PRODUCT_H32_V4 || rval == PRODUCT_TDECK_V1 || rval == PRODUCT_TBEAM_S_V1  || rval == PRODUCT_XIAO_S3) {
+>>>>>>> upstream/master
 	#elif PLATFORM == PLATFORM_NRF52
 	if (rval == PRODUCT_RAK4631 || rval == PRODUCT_HELTEC_T114 || rval == PRODUCT_OPENCOM_XL || rval == PRODUCT_TECHO || rval == PRODUCT_XIAO_NRF || rval == PRODUCT_HMBRW) {
 	#else
@@ -1566,6 +1718,7 @@ bool eeprom_model_valid() {
 	if (model == MODEL_C4 || model == MODEL_C9) {
 	#elif BOARD_MODEL == BOARD_HELTEC32_V3
 	if (model == MODEL_C5 || model == MODEL_CA) {
+<<<<<<< HEAD
     #elif BOARD_MODEL == BOARD_H_W_PAPER
     if (model == MODEL_C8) {
     #elif BOARD_MODEL == BOARD_HELTEC_T114
@@ -1574,6 +1727,14 @@ bool eeprom_model_valid() {
     if (model == MODEL_11 || model == MODEL_12 || model == MODEL_13 || model == MODEL_14) {
     #elif BOARD_MODEL == BOARD_OPENCOM_XL
     if (model == MODEL_21) {
+=======
+	#elif BOARD_MODEL == BOARD_HELTEC32_V4
+	if (model == MODEL_C8) {
+  #elif BOARD_MODEL == BOARD_HELTEC_T114
+  if (model == MODEL_C6 || model == MODEL_C7) {
+  #elif BOARD_MODEL == BOARD_RAK4631
+  if (model == MODEL_11 || model == MODEL_12) {
+>>>>>>> upstream/master
 	#elif BOARD_MODEL == BOARD_HUZZAH32
 	if (model == MODEL_FF) {
 	#elif BOARD_MODEL == BOARD_E22_ESP32
@@ -1632,6 +1793,14 @@ bool eeprom_checksum_valid() {
 	free(hash);
 	free(data);
 	return checksum_valid;
+}
+
+void wr_conf_save(uint8_t mode) {
+	eeprom_update(eeprom_addr(ADDR_CONF_WIFI), mode);
+  #if !HAS_EEPROM && MCU_VARIANT == MCU_NRF52
+    // have to do a flush because we're only writing 1 byte and it syncs after 8
+    eeprom_flush();
+  #endif
 }
 
 void bt_conf_save(bool is_enabled) {
@@ -1815,4 +1984,166 @@ void log_debug(char* msg) {
     serial_write(FEND);
 }
 
+<<<<<<< HEAD
 #include "src/misc/FIFOBuffer.h"
+=======
+inline void fifo_push(FIFOBuffer *f, unsigned char c) {
+  *(f->tail) = c;
+  
+  if (f->tail == f->end) {
+    f->tail = f->begin;
+  } else {
+    f->tail++;
+  }
+}
+
+inline unsigned char fifo_pop(FIFOBuffer *f) {
+  if(f->head == f->end) {
+    f->head = f->begin;
+    return *(f->end);
+  } else {
+    return *(f->head++);
+  }
+}
+
+inline void fifo_flush(FIFOBuffer *f) {
+  f->head = f->tail;
+}
+
+#if MCU_VARIANT != MCU_ESP32 && MCU_VARIANT != MCU_NRF52
+	static inline bool fifo_isempty_locked(const FIFOBuffer *f) {
+	  bool result;
+	  ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
+	    result = fifo_isempty(f);
+	  }
+	  return result;
+	}
+
+	static inline bool fifo_isfull_locked(const FIFOBuffer *f) {
+	  bool result;
+	  ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
+	    result = fifo_isfull(f);
+	  }
+	  return result;
+	}
+
+	static inline void fifo_push_locked(FIFOBuffer *f, unsigned char c) {
+	  ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
+	    fifo_push(f, c);
+	  }
+	}
+#endif
+
+/*
+static inline unsigned char fifo_pop_locked(FIFOBuffer *f) {
+  unsigned char c;
+  ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
+    c = fifo_pop(f);
+  }
+  return c;
+}
+*/
+
+inline void fifo_init(FIFOBuffer *f, unsigned char *buffer, size_t size) {
+  f->head = f->tail = f->begin = buffer;
+  f->end = buffer + size;
+}
+
+inline size_t fifo_len(FIFOBuffer *f) {
+  return f->end - f->begin;
+}
+
+typedef struct FIFOBuffer16
+{
+  uint16_t *begin;
+  uint16_t *end;
+  uint16_t * volatile head;
+  uint16_t * volatile tail;
+} FIFOBuffer16;
+
+inline bool fifo16_isempty(const FIFOBuffer16 *f) {
+  return f->head == f->tail;
+}
+
+inline bool fifo16_isfull(const FIFOBuffer16 *f) {
+  return ((f->head == f->begin) && (f->tail == f->end)) || (f->tail == f->head - 1);
+}
+
+inline void fifo16_push(FIFOBuffer16 *f, uint16_t c) {
+  *(f->tail) = c;
+
+  if (f->tail == f->end) {
+    f->tail = f->begin;
+  } else {
+    f->tail++;
+  }
+}
+
+inline uint16_t fifo16_pop(FIFOBuffer16 *f) {
+  if(f->head == f->end) {
+    f->head = f->begin;
+    return *(f->end);
+  } else {
+    return *(f->head++);
+  }
+}
+
+inline void fifo16_flush(FIFOBuffer16 *f) {
+  f->head = f->tail;
+}
+
+#if MCU_VARIANT != MCU_ESP32 && MCU_VARIANT != MCU_NRF52
+	static inline bool fifo16_isempty_locked(const FIFOBuffer16 *f) {
+	  bool result;
+	  ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
+	    result = fifo16_isempty(f);
+	  }
+
+	  return result;
+	}
+#endif
+
+/*
+static inline bool fifo16_isfull_locked(const FIFOBuffer16 *f) {
+  bool result;
+  ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
+    result = fifo16_isfull(f);
+  }
+  return result;
+}
+
+
+static inline void fifo16_push_locked(FIFOBuffer16 *f, uint16_t c) {
+  ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
+    fifo16_push(f, c);
+  }
+}
+
+static inline size_t fifo16_pop_locked(FIFOBuffer16 *f) {
+  size_t c;
+  ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
+    c = fifo16_pop(f);
+  }
+  return c;
+}
+*/
+
+inline void fifo16_init(FIFOBuffer16 *f, uint16_t *buffer, uint16_t size) {
+  f->head = f->tail = f->begin = buffer;
+  f->end = buffer + size;
+}
+
+inline uint16_t fifo16_len(FIFOBuffer16 *f) {
+  return (f->end - f->begin);
+}
+
+extern void stopRadio();
+void host_disconnected() {
+	stopRadio();
+	cable_state   = CABLE_STATE_DISCONNECTED;
+	current_rssi  = -292;
+	last_rssi     = -292;
+	last_rssi_raw = 0x00;
+	last_snr_raw  = 0x80;
+}
+>>>>>>> upstream/master

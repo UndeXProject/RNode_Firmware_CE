@@ -112,6 +112,10 @@
   #define BOARD_E22_ESP32     0x45 // Custom Ebyte E22 board design for meshtastic, source:
                                    // https://github.com/NanoVHF/Meshtastic-DIY/blob/main/Schematics/E-Byte_E22/Mesh_Ebyte_E22-XXXM30S.pdf
 
+  #define PRODUCT_H32_V4      0xC3
+  #define BOARD_HELTEC32_V4   0x3F
+  #define MODEL_C8            0xC8 // Heltec Lora32 v3, 850-950 MHz, 28dBm
+
   #define PRODUCT_HELTEC_T114 0xC2 // Heltec Mesh Node T114
   #define BOARD_HELTEC_T114   0x3C
   #define MODEL_C6            0xC6 // Heltec Mesh Node T114, 470-510 MHz
@@ -156,12 +160,15 @@
   #define HAS_DISPLAY false
   #define HAS_BLUETOOTH false
   #define HAS_BLE false
+  #define HAS_WIFI false
   #define HAS_TCXO false
   #define HAS_PMU false
   #define HAS_NP false
   #define HAS_EEPROM false
   #define HAS_INPUT false
   #define HAS_SLEEP false
+  #define HAS_LORA_PA false
+  #define HAS_LORA_LNA false
   #define PIN_DISP_SLEEP -1
   #define VALIDATE_FIRMWARE true
 
@@ -181,6 +188,7 @@
 
     #define EEPROM_SIZE 1024
     #define EEPROM_OFFSET EEPROM_SIZE-EEPROM_RESERVED
+    #define CONFIG_OFFSET 0
 
     #define GPS_BAUD_RATE 9600
     #define PIN_GPS_TX 12
@@ -262,7 +270,7 @@
       };
 
       #elif BOARD_VARIANT == MODEL_E3 || BOARD_VARIANT == MODEL_E8
-      #define OCP_TUNED 0x38
+      #define OCP_TUNED 0x18
       const uint8_t interfaces[INTERFACE_COUNT] = {SX1262};
       const bool interface_cfg[INTERFACE_COUNT][3] = { 
                     // SX1262
@@ -315,7 +323,7 @@
               -1, // pin_miso
               -1, // pin_busy
               39, // pin_dio
-              36, // pin_reset
+              33, // pin_reset
               -1, // pin_txen
               -1, // pin_rxen
               -1  // pin_tcxo_enable
@@ -533,6 +541,7 @@
       #define IS_ESP32S3 true
       #define HAS_DISPLAY true
       #define DISPLAY OLED
+      #define HAS_WIFI true
       #define HAS_BLUETOOTH false
       #define HAS_BLE true
       #define HAS_PMU true
@@ -543,7 +552,7 @@
       #define PIN_WAKEUP GPIO_NUM_0
       #define WAKEUP_LEVEL 0
       #define INTERFACE_COUNT 1
-      #define OCP_TUNED 0x38
+      #define OCP_TUNED 0x18
 
       const int pin_btn_usr1 = 0;
 
@@ -641,6 +650,61 @@
       const int pin_disp_reset = 6;
       const int pin_disp_busy = 7;
       const int pin_disp_en = 45;
+
+    #elif BOARD_MODEL == BOARD_HELTEC32_V4
+      #define IS_ESP32S3 true
+      #define HAS_DISPLAY true
+      #define HAS_BLUETOOTH false
+      #define HAS_BLE true
+      #define HAS_WIFI true
+      #define HAS_PMU true
+      #define HAS_CONSOLE true
+      #define HAS_EEPROM true
+      #define HAS_INPUT true
+      #define HAS_SLEEP true
+      #define HAS_LORA_PA true
+      #define HAS_LORA_LNA true
+      #define PIN_WAKEUP GPIO_NUM_0
+      #define WAKEUP_LEVEL 0
+      #define OCP_TUNED 0x18
+      #define Vext GPIO_NUM_36
+
+      const int pin_btn_usr1 = 0;
+
+      #if defined(EXTERNAL_LEDS)
+        const int pin_led_rx = 13;
+        const int pin_led_tx = 14;
+      #else
+        const int pin_led_rx = 35;
+        const int pin_led_tx = 35;
+      #endif
+
+      #define MODEM SX1262
+      #define HAS_TCXO true
+      const int pin_tcxo_enable = -1;
+      #define HAS_BUSY true
+      #define DIO2_AS_RF_SWITCH true
+      #define LNA_GD_THRSHLD (-109)
+      #define LNA_GD_LIMIT   (-89)
+
+      #define LORA_LNA_GAIN  17
+      #define LORA_LNA_GVT   12
+      #define LORA_PA_GC1109 true
+      #define LORA_PA_PWR_EN  7
+      #define LORA_PA_CSD     2
+      #define LORA_PA_CPS    46
+
+      #define PA_MAX_OUTPUT  28
+      #define PA_GAIN_POINTS 22
+      #define PA_GAIN_VALUES 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 10, 10, 9, 9, 8, 7
+
+      const int pin_cs = 8;
+      const int pin_busy = 13;
+      const int pin_dio = 14;
+      const int pin_reset = 12;
+      const int pin_mosi = 10;
+      const int pin_miso = 11;
+      const int pin_sclk = 9;
 
     #elif BOARD_MODEL == BOARD_RNODE_NG_20
       #define HAS_DISPLAY true
@@ -747,6 +811,7 @@
       #define HAS_DISPLAY true
       #define DISPLAY OLED
       #define HAS_CONSOLE true
+      #define HAS_WIFI true
       #define HAS_BLUETOOTH false
       #define HAS_BLE true
       #define HAS_PMU true
@@ -864,6 +929,7 @@
       #define HAS_DISPLAY false
       #define DISPLAY TFT // to be tested...
       #define HAS_CONSOLE false
+      #define HAS_WIFI true
       #define HAS_BLUETOOTH false
       #define HAS_BLE true
       #define HAS_PMU true
@@ -930,11 +996,12 @@
 
     #elif BOARD_MODEL == BOARD_TBEAM_S_V1
       #define IS_ESP32S3 true
-      #define OCP_TUNED 0x38
+      #define OCP_TUNED 0x18
 
       #define HAS_DISPLAY true
       #define DISPLAY MONO_OLED
       #define HAS_CONSOLE true
+      #define HAS_WIFI true
       #define HAS_BLUETOOTH false
       #define HAS_BLE true
       #define HAS_PMU true
@@ -1041,6 +1108,7 @@
       #define HAS_DISPLAY true
       #define DISPLAY OLED
       //#define HAS_CONSOLE true
+      #define HAS_WIFI true
       #define HAS_BLUETOOTH false
       #define HAS_BLE true
       //#define HAS_PMU true
@@ -1241,6 +1309,7 @@
           }
       };
       #elif BOARD_VARIANT == MODEL_13 || BOARD_VARIANT == MODEL_14 || BOARD_VARIANT == MODEL_21
+      #define HAS_LORA_PA
       #define HAS_DISPLAY true
       #define DISPLAY EINK_BW
       #define DISPLAY_SCALE_OVERRIDE true
@@ -1477,7 +1546,7 @@
   // Default OCP value if not specified
   // in board configuration
   #ifndef OCP_TUNED
-    #define OCP_TUNED 0x38
+    #define OCP_TUNED 0x18
   #endif
 
   #ifndef NP_M

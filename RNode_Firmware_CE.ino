@@ -190,7 +190,7 @@ void setup() {
     boot_seq();
   #endif
 
-   #if BOARD_MODEL != BOARD_RAK4631 && BOARD_MODEL != BOARD_HELTEC_T114 && BOARD_MODEL != BOARD_TECHO && BOARD_MODEL != BOARD_XIAO_NRF && BOARD_MODEL != BOARD_T3S3 && BOARD_MODEL != BOARD_TBEAM_S_V1 && BOARD_MODEL != BOARD_OPENCOM_XL
+   #if BOARD_MODEL != BOARD_RAK4631 && BOARD_MODEL != BOARD_HELTEC_T114 && BOARD_MODEL != BOARD_TECHO && BOARD_MODEL != BOARD_XIAO_NRF && BOARD_MODEL != BOARD_T3S3 && BOARD_MODEL != BOARD_TBEAM_S_V1 && BOARD_MODEL != BOARD_OPENCOM_XL && BOARD_MODEL != BOARD_HELTEC32_V4
    // Some boards need to wait until the hardware UART is set up before booting
    // the full firmware. In the case of the RAK4631/TECHO/XIAO_NRF, the line below will wait
    // until a serial connection is actually established with a master. Thus, it
@@ -410,6 +410,10 @@ void setup() {
         kiss_indicate_reset();
       #endif
     } else {
+      #if HAS_WIFI
+        wifi_mode = EEPROM.read(eeprom_addr(ADDR_CONF_WIFI));
+        if (wifi_mode == WR_WIFI_STA || wifi_mode == WR_WIFI_AP) { wifi_remote_init(); }
+      #endif
       kiss_indicate_reset();
     }
 
@@ -454,7 +458,7 @@ inline void kiss_write_packet(int index) {
   serial_write(FEND);
   serial_write(CMD_DATA);
 
-  for (uint16_t i = 0; i < read_len[index]; i++) {
+  for (uint16_t i = 0; i < host_write_len[index]; i++) {
     #if MCU_VARIANT == MCU_NRF52
       portENTER_CRITICAL();
       uint8_t byte = pbuf[i];
@@ -469,7 +473,7 @@ inline void kiss_write_packet(int index) {
   }
 
   serial_write(FEND);
-  read_len[index] = 0;
+  host_write_len[index] = 0;
 
   #if MCU_VARIANT == MCU_ESP32 && HAS_BLE
       bt_flush();
@@ -729,7 +733,7 @@ void pop_queue(RadioInterface* radio) {
   uint8_t index = radio->getIndex();
   if (!queue_flushing) {
     queue_flushing = true;
-    led_tx_on(); uint16_t processed = 0;
+    led_tx_on();
 
     if (!fifo16_isempty(&packet_starts[index])) {
 
@@ -759,6 +763,68 @@ void pop_queue(RadioInterface* radio) {
     display_tx[radio->getIndex()] = true;
   #endif
 
+}
+
+void add_airtime(uint16_t written) {
+  #if MCU_VARIANT == MCU_ESP32 || MCU_VARIANT == MCU_NRF52
+    float lora_symbols = 0;
+    float packet_cost_ms = 0.0;
+    int ldr_opt = 0; if (lora_low_datarate) ldr_opt = 1;
+
+    #if MODEM == SX1276 || MODEM == SX1278
+      lora_symbols += (8*written + PHY_CRC_LORA_BITS - 4*lora_sf + 8 + PHY_HEADER_LORA_SYMBOLS);
+      lora_symbols /=                          4*(lora_sf-2*ldr_opt);
+      lora_symbols *= lora_cr;
+      lora_symbols += lora_preamble_symbols + 0.25 + 8;
+      packet_cost_ms += lora_symbols * lora_symbol_time_ms;
+      
+    #elif MODEM == SX1262 || MODEM == SX1280
+      if (lora_sf < 7) {
+        lora_symbols += (8*written + PHY_CRC_LORA_BITS - 4*lora_sf + PHY_HEADER_LORA_SYMBOLS);
+        lora_symbols /=                              4*lora_sf;
+        lora_symbols *= lora_cr;
+        lora_symbols += lora_preamble_symbols + 2.25 + 8;
+        packet_cost_ms += lora_symbols * lora_symbol_time_ms;
+
+      } else {
+        lora_symbols += (8*written + PHY_CRC_LORA_BITS - 4*lora_sf + 8 + PHY_HEADER_LORA_SYMBOLS);
+        lora_symbols /=                         4*(lora_sf-2*ldr_opt);
+        lora_symbols *= lora_cr;
+        lora_symbols += lora_preamble_symbols + 0.25 + 8;
+        packet_cost_ms += lora_symbols * lora_symbol_time_ms;
+      }
+    
+    #endif
+
+    uint16_t cb = current_airtime_bin();
+    uint16_t nb = cb+1; if (nb == AIRTIME_BINS) { nb = 0; }
+    airtime_bins[cb] += packet_cost_ms;
+    airtime_bins[nb] = 0;
+
+  #endif
+}
+
+void update_airtime() {
+  #if MCU_VARIANT == MCU_ESP32 || MCU_VARIANT == MCU_NRF52
+    uint16_t cb = current_airtime_bin();
+    uint16_t pb = cb-1; if (cb-1 < 0) { pb = AIRTIME_BINS-1; }
+    uint16_t nb = cb+1; if (nb == AIRTIME_BINS) { nb = 0; }
+    airtime_bins[nb] = 0; airtime = (float)(airtime_bins[cb]+airtime_bins[pb])/(2.0*AIRTIME_BINLEN_MS);
+
+    uint32_t longterm_airtime_sum = 0;
+    for (uint16_t bin = 0; bin < AIRTIME_BINS; bin++) { longterm_airtime_sum += airtime_bins[bin]; }
+    longterm_airtime = (float)longterm_airtime_sum/(float)AIRTIME_LONGTERM_MS;
+
+    float longterm_channel_util_sum = 0.0;
+    for (uint16_t bin = 0; bin < AIRTIME_BINS; bin++) { longterm_channel_util_sum += longterm_bins[bin]; }
+    longterm_channel_util = (float)longterm_channel_util_sum/(float)AIRTIME_BINS;
+
+    #if MCU_VARIANT == MCU_ESP32 || MCU_VARIANT == MCU_NRF52
+      update_csma_parameters();
+    #endif
+
+    kiss_indicate_channel_stats();
+  #endif
 }
 
 void transmit(RadioInterface* radio, uint16_t size) {
@@ -1121,6 +1187,8 @@ void serial_callback(uint8_t sbyte) {
       }
     } else if (command == CMD_ROM_READ) {
       kiss_dump_eeprom();
+    } else if (command == CMD_CFG_READ) {
+      kiss_dump_config();
     } else if (command == CMD_ROM_WRITE) {
       if (sbyte == FESC) {
             ESCAPE = true;
@@ -1238,6 +1306,84 @@ void serial_callback(uint8_t sbyte) {
             memcpy(dev_firmware_hash_target, cmdbuf, DEV_HASH_LEN);
             device_save_firmware_hash();
           }
+    } else if (command == CMD_WIFI_CHN) {
+      #if HAS_WIFI
+        if (sbyte > 0 && sbyte < 14) { eeprom_update(eeprom_addr(ADDR_CONF_WCHN), sbyte); }
+      #endif
+    } else if (command == CMD_WIFI_MODE) {
+      #if HAS_WIFI
+        if (sbyte == WR_WIFI_OFF || sbyte == WR_WIFI_STA || sbyte == WR_WIFI_AP) {
+          wr_conf_save(sbyte);
+          wifi_mode = sbyte;
+          wifi_remote_init();
+        }
+      #endif
+    } else if (command == CMD_WIFI_SSID) {
+      #if HAS_WIFI
+        if (sbyte == FESC) { ESCAPE = true; }
+        else {
+          if (ESCAPE) {
+            if (sbyte == TFEND) sbyte = FEND;
+            if (sbyte == TFESC) sbyte = FESC;
+            ESCAPE = false;
+          }
+          if (frame_len < CMD_L) cmdbuf[frame_len++] = sbyte;
+        }
+
+        if (sbyte == 0x00) {
+          for (uint8_t i = 0; i<33; i++) {
+            if (i<frame_len && i<32) { eeprom_update(config_addr(ADDR_CONF_SSID+i), cmdbuf[i]); }
+            else                     { eeprom_update(config_addr(ADDR_CONF_SSID+i), 0x00); }
+          }
+        }
+      #endif
+    } else if (command == CMD_WIFI_PSK) {
+      #if HAS_WIFI
+        if (sbyte == FESC) { ESCAPE = true; }
+        else {
+          if (ESCAPE) {
+            if (sbyte == TFEND) sbyte = FEND;
+            if (sbyte == TFESC) sbyte = FESC;
+            ESCAPE = false;
+          }
+          if (frame_len < CMD_L) cmdbuf[frame_len++] = sbyte;
+        }
+
+        if (sbyte == 0x00) {
+          for (uint8_t i = 0; i<33; i++) {
+            if (i<frame_len && i<32) { eeprom_update(config_addr(ADDR_CONF_PSK+i), cmdbuf[i]); }
+            else                     { eeprom_update(config_addr(ADDR_CONF_PSK+i), 0x00); }
+          }
+        }
+      #endif
+    } else if (command == CMD_WIFI_IP) {
+      #if HAS_WIFI
+        if (sbyte == FESC) { ESCAPE = true; }
+        else {
+          if (ESCAPE) {
+            if (sbyte == TFEND) sbyte = FEND;
+            if (sbyte == TFESC) sbyte = FESC;
+            ESCAPE = false;
+          }
+          if (frame_len < CMD_L) cmdbuf[frame_len++] = sbyte;
+        }
+
+        if (frame_len == 4) { for (uint8_t i = 0; i<4; i++) { eeprom_update(config_addr(ADDR_CONF_IP+i), cmdbuf[i]); } }
+      #endif
+    } else if (command == CMD_WIFI_NM) {
+      #if HAS_WIFI
+        if (sbyte == FESC) { ESCAPE = true; }
+        else {
+          if (ESCAPE) {
+            if (sbyte == TFEND) sbyte = FEND;
+            if (sbyte == TFESC) sbyte = FESC;
+            ESCAPE = false;
+          }
+          if (frame_len < CMD_L) cmdbuf[frame_len++] = sbyte;
+        }
+
+        if (frame_len == 4) { for (uint8_t i = 0; i<4; i++) { eeprom_update(config_addr(ADDR_CONF_NM+i), cmdbuf[i]); } }
+      #endif
     } else if (command == CMD_BT_CTRL) {
       #if HAS_BLUETOOTH || HAS_BLE
         if (sbyte == 0x00) {
@@ -1503,7 +1649,7 @@ void tx_queue_handler(RadioInterface* radio) {
             radio->addCWWaitPassed(millis()-radio->getCWWaitStart()); radio->setCWWaitStart(millis());
             if (radio->getCWWaitStatus()) { return; }                      // Contention window wait time has not yet passed, continue waiting
             else {                                                                // Wait time has passed, flush the queue
-              if (!radio->getLimitRate()) { flush_queue(radio); } else { pop_queue(radio); }
+              if (!radio->getLimitRate() && !radio->getGuardRate()) { flush_queue(radio); } else { pop_queue(radio); }
               radio->resetCWWaitPassed(); radio->setCW(-1); radio->setDifsWaitStart(0); }
           }
         }
@@ -1519,7 +1665,7 @@ void loop() {
       modem_packet_t *modem_packet = NULL;
       if(modem_packet_queue && xQueueReceive(modem_packet_queue, &modem_packet, 0) == pdTRUE && modem_packet) {
         uint8_t packet_interface = modem_packet->interface;
-        read_len[packet_interface] = modem_packet->len;
+        host_write_len[packet_interface] = modem_packet->len;
         last_rssi = modem_packet->rssi;
         last_snr_raw = modem_packet->snr_raw;
         memcpy(&pbuf, modem_packet->data, modem_packet->len);
@@ -1535,7 +1681,7 @@ void loop() {
       modem_packet_t *modem_packet = NULL;
       if(modem_packet_queue && xQueueReceive(modem_packet_queue, &modem_packet, 0) == pdTRUE && modem_packet) {
         uint8_t packet_interface = modem_packet->interface;
-        read_len[packet_interface] = modem_packet->len;
+        host_write_len[packet_interface] = modem_packet->len;
         last_rssi = modem_packet->rssi;
         last_snr_raw = modem_packet->snr_raw;
         memcpy(&pbuf, modem_packet->data, modem_packet->len);
@@ -1619,6 +1765,10 @@ void loop() {
     if (!console_active && bt_ready) update_bt();
   #endif
 
+  #if HAS_WIFI
+    if (wifi_initialized) update_wifi();
+  #endif
+
   #if HAS_INPUT
     input_read();
   #endif
@@ -1664,6 +1814,12 @@ void sleep_now() {
       #if BOARD_MODEL == BOARD_T3S3 || BOARD_MODEL == BOARD_XIAO_S3
         display_intensity = 0;
         update_display(true);
+      #endif
+      #if BOARD_MODEL == BOARD_HELTEC32_V4
+          digitalWrite(LORA_PA_CPS, LOW);
+          digitalWrite(LORA_PA_CSD, LOW);
+          digitalWrite(LORA_PA_PWR_EN, LOW);
+          digitalWrite(Vext, HIGH);
       #endif
       #if PIN_DISP_SLEEP >= 0
         pinMode(PIN_DISP_SLEEP, OUTPUT);
@@ -1760,28 +1916,25 @@ void buffer_serial() {
     #if HAS_BLUETOOTH || HAS_BLE == true
     while (
       c < MAX_CYCLES &&
+      #if HAS_WIFI
+      ( (bt_state != BT_STATE_CONNECTED && Serial.available()) || (bt_state == BT_STATE_CONNECTED && SerialBT.available()) || (wr_state >= WR_STATE_ON && wifi_remote_available()) )
+      #else
       ( (bt_state != BT_STATE_CONNECTED && Serial.available()) || (bt_state == BT_STATE_CONNECTED && SerialBT.available()) )
+      #endif
       )
     #else
     while (c < MAX_CYCLES && Serial.available())
     #endif
     {
       c++;
-
       #if HAS_BLUETOOTH || HAS_BLE == true
-        if (bt_state == BT_STATE_CONNECTED) {
-          if (!fifo_isfull(&serialFIFO)) {
-            fifo_push(&serialFIFO, SerialBT.read());
-          }
-        } else {
-          if (!fifo_isfull(&serialFIFO)) {
-            fifo_push(&serialFIFO, Serial.read());
-          }
-        }
+        if (bt_state == BT_STATE_CONNECTED) { if (!fifo_isfull(&serialFIFO)) { fifo_push(&serialFIFO, SerialBT.read()); } }
+        #if HAS_WIFI
+        else if (wifi_host_is_connected())       { if (!fifo_isfull(&serialFIFO)) { fifo_push(&serialFIFO, wifi_remote_read()); } }
+        #endif
+        else { if (!fifo_isfull(&serialFIFO)) { fifo_push(&serialFIFO, Serial.read()); } }
       #else
-        if (!fifo_isfull(&serialFIFO)) {
-          fifo_push(&serialFIFO, Serial.read());
-        }
+        if (!fifo_isfull(&serialFIFO)) { fifo_push(&serialFIFO, Serial.read()); }
       #endif
     }
 

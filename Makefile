@@ -79,7 +79,7 @@ spiffs-image:
 
 upload-spiffs:
 	@echo Deploying SPIFFS image...
-	$(PYTHON) ./Release/esptool/esptool.py --port $(or $(port), /dev/ttyACM0) $(COMMON_UPLOAD_FLAGS) ./Release/console_image.bin
+	$(PYTHON) ./Release/esptool/esptool.py --port $(or $(port), /dev/ttyACM0) $(COMMON_ESP_UPLOAD_FLAGS) ./Release/console_image.bin
 
 firmware: $(shell grep ^firmware- Makefile | cut -d: -f1)
 
@@ -137,6 +137,9 @@ firmware-heltec32_v2_extled: check_bt_buffers
 firmware-heltec32_v3:
 	arduino-cli compile --fqbn esp32:esp32:heltec_wifi_lora_32_V3 $(COMMON_BUILD_FLAGS) --build-property "compiler.cpp.extra_flags=\"-DBOARD_MODEL=0x3A\""
 
+firmware-heltec32_v4:
+	arduino-cli compile --fqbn esp32:esp32:esp32s3:CDCOnBoot=cdc $(COMMON_BUILD_FLAGS) --build-property "compiler.cpp.extra_flags=\"-DBOARD_MODEL=0x3F\""
+
 firmware-heltec_w_paper:
 	arduino-cli compile --fqbn esp32:esp32:heltec_wifi_lora_32_V3 $(COMMON_BUILD_FLAGS) --build-property "compiler.cpp.extra_flags=\"-DBOARD_MODEL=0x3E\""
 
@@ -181,9 +184,15 @@ upload-tbeam:
 upload-tbeam_sx1262:
 	arduino-cli upload -p $(or $(port), /dev/ttyACM0) --fqbn esp32:esp32:t-beam
 	@sleep 1
+<<<<<<< HEAD
 	$(VENV_BIN)/rnodeconf $(or $(port), /dev/ttyACM0) --firmware-hash $$($(PYTHON) ./partition_hashes ./build/esp32.esp32.t-beam/RNode_Firmware_CE.ino.bin)
 	#@sleep 3
 	#$(PYTHON) ./Release/esptool/esptool.py --chip esp32 --port $(or $(port), /dev/ttyACM0) --baud 921600 --before default_reset --after hard_reset write_flash -z --flash_mode dio --flash_freq 80m --flash_size 4MB 0x210000 ./Release/console_image.bin
+=======
+	rnodeconf /dev/ttyACM0 --firmware-hash $$(./partition_hashes ./build/esp32.esp32.t-beam/RNode_Firmware.ino.bin)
+	@sleep 3
+	python ./Release/esptool/esptool.py --chip esp32 --port /dev/ttyACM0 --baud 921600 --before default_reset --after hard_reset write_flash -z --flash_mode dio --flash_freq 80m --flash_size 4MB 0x210000 ./Release/console_image.bin
+>>>>>>> upstream/master
 
 upload-lora32_v10:
 	arduino-cli upload -p $(or $(port), /dev/ttyUSB0) --fqbn esp32:esp32:ttgo-lora32
@@ -234,7 +243,6 @@ upload-tdeck:
 	@sleep 3
 	python ./Release/esptool/esptool.py --port $(or $(port), /dev/ttyACM0) --chip esp32-s3 --baud 921600 --before default_reset --after hard_reset write_flash -z --flash_mode dio --flash_freq 80m --flash_size 4MB 0x210000 ./Release/console_image.bin
 
-upload-tbeam_supreme:
 	arduino-cli upload -p $(or $(port), /dev/ttyACM0) --fqbn esp32:esp32:esp32s3
 	@sleep 1
 	$(VENV_BIN)/rnodeconf $(or $(port), /dev/ttyACM0) --firmware-hash $$($(PYTHON) ./partition_hashes ./build/esp32.esp32.esp32s3/RNode_Firmware_CE.ino.bin)
@@ -414,6 +422,15 @@ release-xiao_s3:
 	cp build/esp32.esp32.XIAO_ESP32S3/RNode_Firmware_CE.ino.bootloader.bin build/rnode_firmware_xiao_esp32s3.bootloader
 	cp build/esp32.esp32.XIAO_ESP32S3/RNode_Firmware_CE.ino.partitions.bin build/rnode_firmware_xiao_esp32s3.partitions
 	zip --junk-paths ./Release/rnode_firmware_xiao_esp32s3.zip ./Release/esptool/esptool.py ./Release/console_image.bin build/rnode_firmware_xiao_esp32s3.boot_app0 build/rnode_firmware_xiao_esp32s3.bin build/rnode_firmware_xiao_esp32s3.bootloader build/rnode_firmware_xiao_esp32s3.partitions
+	rm -r build
+
+release-heltec32_v4: check_bt_buffers
+	arduino-cli compile --fqbn "esp32:esp32:esp32s3:CDCOnBoot=cdc" -e --build-property "build.partitions=no_ota" --build-property "upload.maximum_size=2097152" --build-property "compiler.cpp.extra_flags=\"-DBOARD_MODEL=0x3F\""
+	cp ~/.arduino15/packages/esp32/hardware/esp32/$(ARDUINO_ESP_CORE_VER)/tools/partitions/boot_app0.bin build/rnode_firmware_heltec32v4pa.boot_app0
+	cp build/esp32.esp32.esp32s3/RNode_Firmware.ino.bin build/rnode_firmware_heltec32v4pa.bin
+	cp build/esp32.esp32.esp32s3/RNode_Firmware.ino.bootloader.bin build/rnode_firmware_heltec32v4pa.bootloader
+	cp build/esp32.esp32.esp32s3/RNode_Firmware.ino.partitions.bin build/rnode_firmware_heltec32v4pa.partitions
+	zip --junk-paths ./Release/rnode_firmware_heltec32v4pa.zip ./Release/esptool/esptool.py ./Release/console_image.bin build/rnode_firmware_heltec32v4pa.boot_app0 build/rnode_firmware_heltec32v4pa.bin build/rnode_firmware_heltec32v4pa.bootloader build/rnode_firmware_heltec32v4pa.partitions
 	rm -r build
 
 release-heltec32_v2_extled: check_bt_buffers
