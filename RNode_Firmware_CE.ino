@@ -109,7 +109,13 @@ void setup() {
     EEPROM.begin(EEPROM_SIZE);
     Serial.setRxBufferSize(CONFIG_UART_BUFFER_SIZE);
 
-    #if BOARD_MODEL == BOARD_TDECK
+    #if BOARD_MODEL == BOARD_T3S3 && defined(T3S3_EPAPER)
+      // The E-Paper board powers its LoRa module through a dedicated LDO.
+      // Enable it before the modem is probed over SPI.
+      pinMode(pin_radio_power, OUTPUT);
+      digitalWrite(pin_radio_power, HIGH);
+      delay(10);
+    #elif BOARD_MODEL == BOARD_TDECK
       pinMode(pin_poweron, OUTPUT);
       digitalWrite(pin_poweron, HIGH);
 

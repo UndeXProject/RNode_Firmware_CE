@@ -778,7 +778,8 @@
               true  // DIO2_AS_RF_SWITCH
           }, 
       };
-      const uint8_t interface_pins[INTERFACE_COUNT][10] = { 
+      // Must remain signed: unused control pins use -1 as a sentinel.
+      const int8_t interface_pins[INTERFACE_COUNT][10] = {
                   // SX1262
           {
                7, // pin_ss
@@ -803,7 +804,7 @@
               false  // DIO2_AS_RF_SWITCH
           }, 
       };
-      const uint8_t interface_pins[INTERFACE_COUNT][10] = { 
+      const int8_t interface_pins[INTERFACE_COUNT][10] = {
                   // SX1278
           {
                7, // pin_ss
@@ -829,7 +830,7 @@
               false  // DIO2_AS_RF_SWITCH
           }, 
       };
-      const uint8_t interface_pins[INTERFACE_COUNT][10] = { 
+      const int8_t interface_pins[INTERFACE_COUNT][10] = {
                   // SX1280
           {
                7, // pin_ss
@@ -857,6 +858,8 @@
 
       #if defined(T3S3_EPAPER)
         // LilyGO T3S3 E-Paper v1.x / DEPG0213BN
+        // GPIO35 enables the dedicated RT9080 LDO that powers the radio.
+        const int pin_radio_power = 35;
         const int pin_disp_busy = 48;
         const int pin_disp_reset = 47;
         const int pin_disp_dc = 16;
