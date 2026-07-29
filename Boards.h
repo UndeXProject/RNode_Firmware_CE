@@ -921,7 +921,8 @@
               true  // DIO2_AS_RF_SWITCH
           }, 
       };
-      const uint8_t interface_pins[INTERFACE_COUNT][10] = { 
+      // Must remain signed: unused control pins use -1 as a sentinel.
+      const int8_t interface_pins[INTERFACE_COUNT][10] = {
                   // SX1262
           {
                9, // pin_ss
