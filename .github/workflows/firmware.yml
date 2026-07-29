@@ -76,7 +76,7 @@ jobs:
             ~/.arduino15
             ~/Arduino
             ~/.local
-          key: arduino-${{ runner.os }}-${{ matrix.platform }}-v2-${{ hashFiles('arduino-cli.yaml', 'Makefile') }}
+          key: arduino-${{ runner.os }}-${{ matrix.platform }}-v3-${{ hashFiles('arduino-cli.yaml', 'Makefile') }}
 
       - name: Install toolchain
         if: steps.cache.outputs.cache-hit != 'true'
@@ -91,6 +91,13 @@ jobs:
           sed -i -E 's/^#define RX_QUEUE_SIZE .*/#define RX_QUEUE_SIZE 6144/' "$bluetooth_source"
           sed -i -E 's/^#define TX_QUEUE_SIZE .*/#define TX_QUEUE_SIZE 384/' "$bluetooth_source"
           ./esp32_btbufs.py "$bluetooth_source"
+
+      - name: Configure Heltec UF2 converter
+        if: matrix.platform == 'nrf'
+        run: |
+          heltec_root="$HOME/.arduino15/packages/Heltec_nRF52/hardware/Heltec_nRF52/1.7.0"
+          sed -i -E 's|^tools\.uf2conv\.cmd=python |tools.uf2conv.cmd=|' "$heltec_root/platform.txt"
+          chmod +x "$heltec_root/tools/uf2conv/uf2conv.py"
 
   build:
     name: Build ${{ matrix.target }}
@@ -189,7 +196,7 @@ jobs:
             ~/.arduino15
             ~/Arduino
             ~/.local
-          key: arduino-${{ runner.os }}-${{ matrix.platform }}-v2-${{ hashFiles('arduino-cli.yaml', 'Makefile') }}
+          key: arduino-${{ runner.os }}-${{ matrix.platform }}-v3-${{ hashFiles('arduino-cli.yaml', 'Makefile') }}
           fail-on-cache-miss: true
 
       - name: Add user tools to PATH
