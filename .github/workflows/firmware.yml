@@ -1,0 +1,309 @@
+name: Firmware builds
+
+on:
+  push:
+    branches:
+      - master
+  schedule:
+    - cron: "17 3 * * *"
+      timezone: "Europe/Moscow"
+  workflow_dispatch:
+    inputs:
+      publish_release:
+        description: Update the rolling nightly prerelease
+        required: true
+        type: boolean
+        default: true
+
+concurrency:
+  group: firmware-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'push' }}
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  source:
+    name: Resolve master revision
+    runs-on: ubuntu-latest
+    outputs:
+      commit: ${{ steps.revision.outputs.commit }}
+    steps:
+      - name: Check out master
+        uses: actions/checkout@v4
+        with:
+          ref: master
+          fetch-depth: 0
+
+      - name: Record source revision
+        id: revision
+        run: echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+  toolchain:
+    name: Prepare ${{ matrix.platform }} toolchain
+    needs: source
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - esp32
+          - nrf
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.source.outputs.commit }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Set up Arduino CLI
+        uses: arduino/setup-arduino-cli@v2
+
+      - name: Restore toolchain cache
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.arduino15
+            ~/Arduino
+            ~/.local
+          key: arduino-${{ runner.os }}-${{ matrix.platform }}-v1-${{ hashFiles('arduino-cli.yaml', 'Makefile') }}
+
+      - name: Install toolchain
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          make prep-index
+          make prep-${{ matrix.platform }}
+
+  build:
+    name: Build ${{ matrix.target }}
+    needs:
+      - source
+      - toolchain
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      max-parallel: 8
+      matrix:
+        include:
+          - target: release-tbeam
+            platform: esp32
+          - target: release-tbeam_sx1262
+            platform: esp32
+          - target: release-lora32_v10
+            platform: esp32
+          - target: release-lora32_v20
+            platform: esp32
+          - target: release-lora32_v21
+            platform: esp32
+          - target: release-lora32_v10_extled
+            platform: esp32
+          - target: release-lora32_v20_extled
+            platform: esp32
+          - target: release-lora32_v21_extled
+            platform: esp32
+          - target: release-lora32_v21_tcxo
+            platform: esp32
+          - target: release-heltec32_v2
+            platform: esp32
+          - target: release-heltec32_v3
+            platform: esp32
+          - target: release-heltec_w_paper
+            platform: esp32
+          - target: release-xiao_s3
+            platform: esp32
+          - target: release-heltec32_v2_extled
+            platform: esp32
+          - target: release-rnode_ng_20
+            platform: esp32
+          - target: release-rnode_ng_21
+            platform: esp32
+          - target: release-t3s3
+            platform: esp32
+          - target: release-t3s3_sx127x
+            platform: esp32
+          - target: release-t3s3_sx1280_pa
+            platform: esp32
+          - target: release-t3s3_epaper
+            platform: esp32
+          - target: release-t3s3_epaper_sx127x
+            platform: esp32
+          - target: release-t3s3_epaper_sx1280_pa
+            platform: esp32
+          - target: release-e22_esp32
+            platform: esp32
+          - target: release-tdeck
+            platform: esp32
+          - target: release-tbeam_supreme
+            platform: esp32
+          - target: release-featheresp32
+            platform: esp32
+          - target: release-genericesp32
+            platform: esp32
+          - target: release-techo
+            platform: nrf
+          - target: release-rak4631
+            platform: nrf
+          - target: release-rak4631_sx1280
+            platform: nrf
+          - target: release-opencom-xl
+            platform: nrf
+          - target: release-heltec_t114
+            platform: nrf
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.source.outputs.commit }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Set up Arduino CLI
+        uses: arduino/setup-arduino-cli@v2
+
+      - name: Restore ${{ matrix.platform }} toolchain
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.arduino15
+            ~/Arduino
+            ~/.local
+          key: arduino-${{ runner.os }}-${{ matrix.platform }}-v1-${{ hashFiles('arduino-cli.yaml', 'Makefile') }}
+          fail-on-cache-miss: true
+
+      - name: Add user tools to PATH
+        run: echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Build release package
+        run: make ${{ matrix.target }}
+
+      - name: Prepare uniquely named package
+        env:
+          TARGET: ${{ matrix.target }}
+          PLATFORM: ${{ matrix.platform }}
+        run: |
+          mkdir -p nightly
+          mapfile -t packages < <(find Release -maxdepth 1 -type f -name 'rnode_firmware*.zip' -print)
+
+          if (( ${#packages[@]} == 1 )); then
+            cp "${packages[0]}" "nightly/${TARGET}.zip"
+          elif (( ${#packages[@]} == 0 )) && [[ -d build ]]; then
+            mapfile -t payloads < <(
+              find build -type f \( -name '*.bin' -o -name '*.hex' -o -name '*.uf2' \) -print
+            )
+            if (( ${#payloads[@]} == 0 )); then
+              echo "::error::${TARGET} produced no package or firmware files"
+              exit 1
+            fi
+
+            extras=()
+            if [[ "$PLATFORM" == "esp32" ]]; then
+              extras+=(Release/esptool/esptool.py Release/console_image.bin)
+            fi
+            zip -j "nightly/${TARGET}.zip" "${payloads[@]}" "${extras[@]}"
+          else
+            echo "::error::${TARGET} produced an unexpected number of packages: ${#packages[@]}"
+            exit 1
+          fi
+
+          (
+            cd nightly
+            sha256sum "${TARGET}.zip" > "${TARGET}.zip.sha256"
+          )
+
+      - name: Upload build artifact
+        if: github.event_name != 'push'
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-${{ matrix.target }}
+          path: nightly/*
+          if-no-files-found: error
+          retention-days: 3
+
+  publish:
+    name: Update nightly release
+    if: >-
+      ${{
+        github.event_name == 'schedule' ||
+        (github.event_name == 'workflow_dispatch' && inputs.publish_release)
+      }}
+    needs:
+      - source
+      - build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.source.outputs.commit }}
+          fetch-depth: 0
+
+      - name: Download firmware packages
+        uses: actions/download-artifact@v4
+        with:
+          pattern: nightly-*
+          path: dist
+          merge-multiple: true
+
+      - name: Create release metadata
+        env:
+          SOURCE_COMMIT: ${{ needs.source.outputs.commit }}
+        run: |
+          (
+            cd dist
+            sha256sum *.zip > SHA256SUMS
+          )
+          short_commit="${SOURCE_COMMIT:0:7}"
+          build_time="$(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+          {
+            echo "Automated nightly firmware packages built from \`master\`."
+            echo
+            echo "- Commit: [\`${SOURCE_COMMIT}\`](https://github.com/${GITHUB_REPOSITORY}/commit/${SOURCE_COMMIT})"
+            echo "- Built: ${build_time}"
+            echo "- Configurations: 32"
+            echo
+            echo "These are development builds for personal testing."
+          } > release-notes.md
+          echo "title=Nightly ${build_time} (${short_commit})" >> "$GITHUB_ENV"
+
+      - name: Move nightly tag
+        env:
+          SOURCE_COMMIT: ${{ needs.source.outputs.commit }}
+        run: |
+          git tag --force nightly "$SOURCE_COMMIT"
+          git push --force origin refs/tags/nightly
+
+      - name: Create or update nightly prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view nightly >/dev/null 2>&1; then
+            gh release edit nightly \
+              --title "$title" \
+              --notes-file release-notes.md \
+              --prerelease \
+              --latest=false
+            gh release upload nightly dist/* --clobber
+          else
+            gh release create nightly dist/* \
+              --verify-tag \
+              --title "$title" \
+              --notes-file release-notes.md \
+              --prerelease \
+              --latest=false
+          fi
