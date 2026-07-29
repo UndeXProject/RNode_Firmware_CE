@@ -25,6 +25,53 @@ The latest release, installable through `rnodeconf`, is version `1.75`. This rel
 
 You must have at least version `2.1.3` of `rnodeconf` installed to update your RNode Firmware install to version `1.75`. **YOU MUST USE AN RNS VERSION HIGHER THAN `0.9.3` IF YOU ARE USING A MULTI-INTERFACE RNODE!**
 
+## Nightly Releases
+
+> [!WARNING]
+> This repository is an independent personal fork of the official
+> [RNode Firmware CE project](https://github.com/liberatedsystems/RNode_Firmware_CE).
+> Its Nightly builds are unofficial, are not supported or endorsed by the
+> upstream maintainers, and are provided without warranty. Use and flash them
+> entirely at your own risk.
+
+Automated development builds from the current `master` branch are available in
+the [rolling Nightly release](https://github.com/UndeXProject/RNode_Firmware_CE/releases/tag/nightly).
+The [firmware build workflow](https://github.com/UndeXProject/RNode_Firmware_CE/actions/workflows/firmware.yml)
+runs every day at 03:17 Europe/Moscow and builds all 32 release profiles for the
+supported ESP32 and nRF52 boards.
+
+The `nightly` tag and its prerelease are updated in place after every successful
+scheduled build. The release description contains a table matching each ZIP
+archive to its board and radio configuration, together with the archive's
+SHA-256 checksum. Individual `.zip.sha256` files and a combined `SHA256SUMS`
+manifest are also attached.
+
+Nightly firmware is intended for development and personal testing. It may be
+unstable, is not distributed through `rnodeconf`, and should not be treated as a
+stable CE release. Select the archive that exactly matches your board and radio
+module.
+
+Verify a downloaded archive on Windows PowerShell:
+
+```powershell
+(Get-FileHash .\release-t3s3_epaper.zip -Algorithm SHA256).Hash.ToLower()
+```
+
+On Linux:
+
+```sh
+sha256sum release-t3s3_epaper.zip
+```
+
+On macOS:
+
+```sh
+shasum -a 256 release-t3s3_epaper.zip
+```
+
+Compare the result with the release table, the corresponding `.zip.sha256`
+file, or the `SHA256SUMS` manifest before flashing.
+
 ## Supported products and boards
 
 ### Products
