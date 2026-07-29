@@ -114,68 +114,100 @@ jobs:
         include:
           - target: release-tbeam
             platform: esp32
+            board: LilyGO T-Beam (SX127x)
           - target: release-tbeam_sx1262
             platform: esp32
+            board: LilyGO T-Beam (SX1262)
           - target: release-lora32_v10
             platform: esp32
+            board: LilyGO LoRa32 v1.0
           - target: release-lora32_v20
             platform: esp32
+            board: LilyGO LoRa32 v2.0
           - target: release-lora32_v21
             platform: esp32
+            board: LilyGO LoRa32 v2.1
           - target: release-lora32_v10_extled
             platform: esp32
+            board: LilyGO LoRa32 v1.0 (external LED)
           - target: release-lora32_v20_extled
             platform: esp32
+            board: LilyGO LoRa32 v2.0 (external LED)
           - target: release-lora32_v21_extled
             platform: esp32
+            board: LilyGO LoRa32 v2.1 (external LED)
           - target: release-lora32_v21_tcxo
             platform: esp32
+            board: LilyGO LoRa32 v2.1 (TCXO)
           - target: release-heltec32_v2
             platform: esp32
+            board: Heltec LoRa32 v2
           - target: release-heltec32_v3
             platform: esp32
+            board: Heltec LoRa32 v3
           - target: release-heltec_w_paper
             platform: esp32
+            board: Heltec Wireless Paper
           - target: release-xiao_s3
             platform: esp32
+            board: Seeed Studio XIAO ESP32-S3
           - target: release-heltec32_v2_extled
             platform: esp32
+            board: Heltec LoRa32 v2 (external LED)
           - target: release-rnode_ng_20
             platform: esp32
+            board: RNode NG 2.0
           - target: release-rnode_ng_21
             platform: esp32
+            board: RNode NG 2.1
           - target: release-t3s3
             platform: esp32
+            board: LilyGO T3-S3 (SX1262)
           - target: release-t3s3_sx127x
             platform: esp32
+            board: LilyGO T3-S3 (SX127x)
           - target: release-t3s3_sx1280_pa
             platform: esp32
+            board: LilyGO T3-S3 (SX1280 PA)
           - target: release-t3s3_epaper
             platform: esp32
+            board: LilyGO T3-S3 E-Paper (SX1262)
           - target: release-t3s3_epaper_sx127x
             platform: esp32
+            board: LilyGO T3-S3 E-Paper (SX127x)
           - target: release-t3s3_epaper_sx1280_pa
             platform: esp32
+            board: LilyGO T3-S3 E-Paper (SX1280 PA)
           - target: release-e22_esp32
             platform: esp32
+            board: EBYTE E22 ESP32
           - target: release-tdeck
             platform: esp32
+            board: LilyGO T-Deck
           - target: release-tbeam_supreme
             platform: esp32
+            board: LilyGO T-Beam Supreme
           - target: release-featheresp32
             platform: esp32
+            board: Adafruit Feather ESP32
           - target: release-genericesp32
             platform: esp32
+            board: Generic ESP32
           - target: release-techo
             platform: nrf
+            board: LilyGO T-Echo
           - target: release-rak4631
             platform: nrf
+            board: RAK4631 (SX1262)
           - target: release-rak4631_sx1280
             platform: nrf
+            board: RAK4631 (SX1280)
           - target: release-opencom-xl
             platform: nrf
+            board: OpenCom XL
           - target: release-heltec_t114
             platform: nrf
+            board: Heltec Mesh Node T114
     steps:
       - name: Check out source
         uses: actions/checkout@v4
@@ -210,6 +242,7 @@ jobs:
         env:
           TARGET: ${{ matrix.target }}
           PLATFORM: ${{ matrix.platform }}
+          BOARD: ${{ matrix.board }}
         run: |
           mkdir -p nightly
           mapfile -t packages < <(find Release -maxdepth 1 -type f -name 'rnode_firmware*.zip' -print)
@@ -238,6 +271,7 @@ jobs:
           (
             cd nightly
             sha256sum "${TARGET}.zip" > "${TARGET}.zip.sha256"
+            printf '%s\n' "$BOARD" > "${TARGET}.board"
           )
 
       - name: Upload build artifact
@@ -293,8 +327,19 @@ jobs:
             echo "- Built: ${build_time}"
             echo "- Configurations: 32"
             echo
+            echo "| Firmware file | SHA-256 | Board / configuration |"
+            echo "| --- | --- | --- |"
+            while IFS= read -r archive; do
+              filename="$(basename "$archive")"
+              target="${filename%.zip}"
+              read -r checksum _ < "dist/${target}.zip.sha256"
+              board="$(< "dist/${target}.board")"
+              echo "| [\`${filename}\`](https://github.com/${GITHUB_REPOSITORY}/releases/download/nightly/${filename}) | \`${checksum}\` | ${board} |"
+            done < <(find dist -maxdepth 1 -type f -name '*.zip' -print | sort)
+            echo
             echo "These are development builds for personal testing."
           } > release-notes.md
+          rm dist/*.board
           echo "title=Nightly ${build_time} (${short_commit})" >> "$GITHUB_ENV"
 
       - name: Move nightly tag
