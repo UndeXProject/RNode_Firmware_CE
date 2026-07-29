@@ -923,7 +923,7 @@ void draw_waterfall(int px, int py) {
   if (rssi_val > WF_RSSI_MAX) rssi_val = WF_RSSI_MAX;
   int rssi_normalised = ((rssi_val - WF_RSSI_MIN)*(1.0/WF_RSSI_SPAN))*WF_PIXEL_WIDTH;
   if (display_tx[interface_page]) {
-    for (uint8_t i; i < WF_TX_SIZE; i++) {
+    for (uint8_t i = 0; i < WF_TX_SIZE; i++) {
       waterfall[interface_page][waterfall_head[interface_page]++] = -1;
       if (waterfall_head[interface_page] >= WATERFALL_SIZE) waterfall_head[interface_page] = 0;
     }
@@ -1292,6 +1292,13 @@ bool epd_blanked = false;
 #endif
 
 void update_display(bool blank = false) {
+  #if BOARD_MODEL == BOARD_TDECK
+    // T-Deck's TFT and SX1262 share one SPI controller. The ESP32-S3 SPI
+    // implementation does not mask the modem IRQ during display transactions,
+    // so keep the ISR from accessing the bus until the frame update is done.
+    noInterrupts();
+  #endif
+
   display_updating = true;
   if (blank == true) {
     last_disp_update = millis()-disp_update_interval-1;
@@ -1415,6 +1422,10 @@ void update_display(bool blank = false) {
     }
   }
   display_updating = false;
+
+  #if BOARD_MODEL == BOARD_TDECK
+    interrupts();
+  #endif
 }
 
 void display_unblank() {
