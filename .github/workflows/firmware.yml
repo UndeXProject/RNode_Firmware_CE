@@ -76,7 +76,7 @@ jobs:
             ~/.arduino15
             ~/Arduino
             ~/.local
-          key: arduino-${{ runner.os }}-${{ matrix.platform }}-v3-${{ hashFiles('arduino-cli.yaml', 'Makefile') }}
+          key: arduino-${{ runner.os }}-${{ matrix.platform }}-v4-${{ hashFiles('arduino-cli.yaml', 'Makefile') }}
 
       - name: Install toolchain
         if: steps.cache.outputs.cache-hit != 'true'
@@ -97,6 +97,7 @@ jobs:
         run: |
           heltec_root="$HOME/.arduino15/packages/Heltec_nRF52/hardware/Heltec_nRF52/1.7.0"
           sed -i -E 's|^tools\.uf2conv\.cmd=python |tools.uf2conv.cmd=|' "$heltec_root/platform.txt"
+          sed -i 's/\r$//' "$heltec_root/tools/uf2conv/uf2conv.py"
           chmod +x "$heltec_root/tools/uf2conv/uf2conv.py"
 
   build:
@@ -196,7 +197,7 @@ jobs:
             ~/.arduino15
             ~/Arduino
             ~/.local
-          key: arduino-${{ runner.os }}-${{ matrix.platform }}-v3-${{ hashFiles('arduino-cli.yaml', 'Makefile') }}
+          key: arduino-${{ runner.os }}-${{ matrix.platform }}-v4-${{ hashFiles('arduino-cli.yaml', 'Makefile') }}
           fail-on-cache-miss: true
 
       - name: Add user tools to PATH
