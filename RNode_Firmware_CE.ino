@@ -1650,7 +1650,12 @@ void sleep_now() {
         stopRadio(interface_obj[i]); // TODO: Check this on all platforms
     }
     #if PLATFORM == PLATFORM_ESP32
-      #if BOARD_MODEL == BOARD_T3S3 || BOARD_MODEL == BOARD_XIAO_S3
+      #if BOARD_MODEL == BOARD_T3S3 && DISPLAY == EINK_BW
+        #if HAS_DISPLAY
+          // E-paper retains the current frame without power.
+          display.hibernate();
+        #endif
+      #elif BOARD_MODEL == BOARD_T3S3 || BOARD_MODEL == BOARD_XIAO_S3
         display_intensity = 0;
         update_display(true);
       #endif

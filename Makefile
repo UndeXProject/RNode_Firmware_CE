@@ -45,6 +45,7 @@ prep-esp32:
 	arduino-cli lib install "XPowersLib"
 	arduino-cli lib install "Crypto"
 	arduino-cli lib install "Adafruit NeoPixel"
+	arduino-cli lib install "GxEPD2"
 	pip install pyserial rns --upgrade --user --break-system-packages # This looks scary, but it's actually just telling pip to install packages as a user instead of trying to install them systemwide, which bypasses the "externally managed environment" error.
 
 prep-nrf:
@@ -94,6 +95,15 @@ firmware-t3s3_sx126x:
 
 firmware-t3s3_sx1280_pa:
 	arduino-cli compile --fqbn "esp32:esp32:esp32s3:CDCOnBoot=cdc" $(COMMON_BUILD_FLAGS) --build-property "compiler.cpp.extra_flags=\"-DBOARD_MODEL=0x42\" \"-DBOARD_VARIANT=0xAC\""
+
+firmware-t3s3_epaper:
+	arduino-cli compile --fqbn "esp32:esp32:esp32s3:CDCOnBoot=cdc" $(COMMON_BUILD_FLAGS) --build-property "compiler.cpp.extra_flags=\"-DBOARD_MODEL=0x42\" \"-DBOARD_VARIANT=0xA1\" \"-DT3S3_EPAPER\""
+
+firmware-t3s3_epaper_sx127x:
+	arduino-cli compile --fqbn "esp32:esp32:esp32s3:CDCOnBoot=cdc" $(COMMON_BUILD_FLAGS) --build-property "compiler.cpp.extra_flags=\"-DBOARD_MODEL=0x42\" \"-DBOARD_VARIANT=0xA5\" \"-DT3S3_EPAPER\""
+
+firmware-t3s3_epaper_sx1280_pa:
+	arduino-cli compile --fqbn "esp32:esp32:esp32s3:CDCOnBoot=cdc" $(COMMON_BUILD_FLAGS) --build-property "compiler.cpp.extra_flags=\"-DBOARD_MODEL=0x42\" \"-DBOARD_VARIANT=0xAC\" \"-DT3S3_EPAPER\""
 
 firmware-e22_esp32:
 	arduino-cli compile --fqbn esp32:esp32:esp32 $(COMMON_BUILD_FLAGS) --build-property "compiler.cpp.extra_flags=\"-DBOARD_MODEL=0x45\" \"-DEXTERNAL_LEDS=true\""
@@ -456,6 +466,33 @@ release-t3s3_sx1280_pa:
 	cp build/esp32.esp32.esp32s3/RNode_Firmware_CE.ino.bootloader.bin build/rnode_firmware_t3s3_sx1280_pa.bootloader
 	cp build/esp32.esp32.esp32s3/RNode_Firmware_CE.ino.partitions.bin build/rnode_firmware_t3s3_sx1280_pa.partitions
 	zip --junk-paths ./Release/rnode_firmware_t3s3_sx1280_pa.zip ./Release/esptool/esptool.py ./Release/console_image.bin build/rnode_firmware_t3s3_sx1280_pa.boot_app0 build/rnode_firmware_t3s3_sx1280_pa.bin build/rnode_firmware_t3s3_sx1280_pa.bootloader build/rnode_firmware_t3s3_sx1280_pa.partitions
+	rm -r build
+
+release-t3s3_epaper:
+	arduino-cli compile --fqbn "esp32:esp32:esp32s3:CDCOnBoot=cdc" $(COMMON_BUILD_FLAGS) --build-property "compiler.cpp.extra_flags=\"-DBOARD_MODEL=0x42\" \"-DBOARD_VARIANT=0xA1\" \"-DT3S3_EPAPER\""
+	cp ~/.arduino15/packages/esp32/hardware/esp32/$(ARDUINO_ESP_CORE_VER)/tools/partitions/boot_app0.bin build/rnode_firmware_t3s3_epaper_sx126x.boot_app0
+	cp build/esp32.esp32.esp32s3/RNode_Firmware_CE.ino.bin build/rnode_firmware_t3s3_epaper_sx126x.bin
+	cp build/esp32.esp32.esp32s3/RNode_Firmware_CE.ino.bootloader.bin build/rnode_firmware_t3s3_epaper_sx126x.bootloader
+	cp build/esp32.esp32.esp32s3/RNode_Firmware_CE.ino.partitions.bin build/rnode_firmware_t3s3_epaper_sx126x.partitions
+	zip --junk-paths ./Release/rnode_firmware_t3s3_epaper_sx126x.zip ./Release/esptool/esptool.py ./Release/console_image.bin build/rnode_firmware_t3s3_epaper_sx126x.boot_app0 build/rnode_firmware_t3s3_epaper_sx126x.bin build/rnode_firmware_t3s3_epaper_sx126x.bootloader build/rnode_firmware_t3s3_epaper_sx126x.partitions
+	rm -r build
+
+release-t3s3_epaper_sx127x:
+	arduino-cli compile --fqbn "esp32:esp32:esp32s3:CDCOnBoot=cdc" $(COMMON_BUILD_FLAGS) --build-property "compiler.cpp.extra_flags=\"-DBOARD_MODEL=0x42\" \"-DBOARD_VARIANT=0xA5\" \"-DT3S3_EPAPER\""
+	cp ~/.arduino15/packages/esp32/hardware/esp32/$(ARDUINO_ESP_CORE_VER)/tools/partitions/boot_app0.bin build/rnode_firmware_t3s3_epaper_sx127x.boot_app0
+	cp build/esp32.esp32.esp32s3/RNode_Firmware_CE.ino.bin build/rnode_firmware_t3s3_epaper_sx127x.bin
+	cp build/esp32.esp32.esp32s3/RNode_Firmware_CE.ino.bootloader.bin build/rnode_firmware_t3s3_epaper_sx127x.bootloader
+	cp build/esp32.esp32.esp32s3/RNode_Firmware_CE.ino.partitions.bin build/rnode_firmware_t3s3_epaper_sx127x.partitions
+	zip --junk-paths ./Release/rnode_firmware_t3s3_epaper_sx127x.zip ./Release/esptool/esptool.py ./Release/console_image.bin build/rnode_firmware_t3s3_epaper_sx127x.boot_app0 build/rnode_firmware_t3s3_epaper_sx127x.bin build/rnode_firmware_t3s3_epaper_sx127x.bootloader build/rnode_firmware_t3s3_epaper_sx127x.partitions
+	rm -r build
+
+release-t3s3_epaper_sx1280_pa:
+	arduino-cli compile --fqbn "esp32:esp32:esp32s3:CDCOnBoot=cdc" $(COMMON_BUILD_FLAGS) --build-property "compiler.cpp.extra_flags=\"-DBOARD_MODEL=0x42\" \"-DBOARD_VARIANT=0xAC\" \"-DT3S3_EPAPER\""
+	cp ~/.arduino15/packages/esp32/hardware/esp32/$(ARDUINO_ESP_CORE_VER)/tools/partitions/boot_app0.bin build/rnode_firmware_t3s3_epaper_sx1280_pa.boot_app0
+	cp build/esp32.esp32.esp32s3/RNode_Firmware_CE.ino.bin build/rnode_firmware_t3s3_epaper_sx1280_pa.bin
+	cp build/esp32.esp32.esp32s3/RNode_Firmware_CE.ino.bootloader.bin build/rnode_firmware_t3s3_epaper_sx1280_pa.bootloader
+	cp build/esp32.esp32.esp32s3/RNode_Firmware_CE.ino.partitions.bin build/rnode_firmware_t3s3_epaper_sx1280_pa.partitions
+	zip --junk-paths ./Release/rnode_firmware_t3s3_epaper_sx1280_pa.zip ./Release/esptool/esptool.py ./Release/console_image.bin build/rnode_firmware_t3s3_epaper_sx1280_pa.boot_app0 build/rnode_firmware_t3s3_epaper_sx1280_pa.bin build/rnode_firmware_t3s3_epaper_sx1280_pa.bootloader build/rnode_firmware_t3s3_epaper_sx1280_pa.partitions
 	rm -r build
 
 release-e22_esp32:

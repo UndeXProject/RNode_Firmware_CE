@@ -45,6 +45,7 @@ You must have at least version `2.1.3` of `rnodeconf` installed to update your R
 | Heltec LoRa32 v2 | No link | SX1276/8 | ESP32 | Discontinued? |
 | Heltec LoRa32 v3 | [Buy here](https://heltec.org/project/wifi-lora-32-v3/) | SX1262 | ESP32 | 
 | LilyGo T3S3 v1.0 | [Buy here](https://lilygo.cc/products/t3s3-v1-0) | SX1262 or SX1276 or SX1280 | ESP32-S3 |
+| LilyGo T3S3 E-Paper | [Buy here](https://lilygo.cc/products/ts-s3-epaper) | SX1262 or SX1276 or SX1280 | ESP32-S3 | DEPG0213BN display |
 | LilyGo T-Echo | [Buy here](https://lilygo.cc/products/t-echo-lilygo) | SX1262 | nRF52 |
 | Heltec T114 | [Buy here](https://heltec.org/project/mesh-node-t114/) | SX1262 | nRF52 | 
 | Homebrew ESP32 boards | | Any supported | ESP32 | This can be any board with an Adafruit Feather (or generic) ESP32 chip |
@@ -64,6 +65,24 @@ The RNode Firmware supports all transceiver modules based on the following chips
 * Semtech SX1280
 
 These also must have an **SPI interface** and **DIO_0 (sometimes called DIO_1)** pin connected to the MCU directly.
+
+### LilyGO T3S3 E-Paper builds
+
+The E-Paper board uses separate build profiles so the existing T3S3 OLED
+firmware remains unchanged:
+
+```sh
+make prep-esp32
+make firmware-t3s3_epaper            # SX1262/8
+make firmware-t3s3_epaper_sx127x     # SX1276/8
+make firmware-t3s3_epaper_sx1280_pa  # SX1280 with PA
+```
+
+The DEPG0213BN display is updated at most once every two seconds and only when
+the frame changes. Partial updates are used between periodic full refreshes; a
+full refresh is forced after 30 partial updates or five minutes to limit
+ghosting. Entering deep sleep hibernates the display without clearing its
+retained image.
 
 ## One Tool, Many Uses
 

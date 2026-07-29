@@ -91,7 +91,14 @@ void busyCallback(const void* p) { display_callback(); }
   #define DISP_ADDR 0x3C
   #endif
 #elif BOARD_MODEL == BOARD_T3S3
-  #if DISPLAY == OLED
+  #if DISPLAY == EINK_BW
+  #undef DISP_W
+  #undef DISP_H
+  #define DISP_W 122
+  #define DISP_H 250
+  #define DISP_ADDR -1
+  SPIClass displaySPI(HSPI);
+  #elif DISPLAY == OLED
   #define DISP_RST 21
   #define DISP_ADDR 0x3C
   #define SCL_OLED 17
@@ -145,7 +152,18 @@ void busyCallback(const void* p) { display_callback(); }
 
 #include "Graphics.h"
 
-#if BOARD_MODEL == BOARD_RAK4631 || BOARD_MODEL == BOARD_OPENCOM_XL || BOARD_MODEL == BOARD_H_W_PAPER
+#if BOARD_MODEL == BOARD_T3S3 && DISPLAY == EINK_BW
+  GxEPD2_BW<DISPLAY_MODEL, DISPLAY_MODEL::HEIGHT> display(DISPLAY_MODEL(pin_disp_cs, pin_disp_dc, pin_disp_reset, pin_disp_busy));
+  float disp_target_fps = 0.5;
+  uint32_t last_epd_refresh = 0;
+  uint32_t last_epd_full_refresh = 0;
+  uint16_t epd_partial_refreshes = 0;
+  bool epd_force_full_refresh = true;
+  uint32_t epd_last_frame_hash = 0;
+  bool epd_frame_hash_valid = false;
+  #define REFRESH_PERIOD 300000 // 5 minutes in ms
+  #define EPD_MAX_PARTIAL_REFRESHES 30
+#elif BOARD_MODEL == BOARD_RAK4631 || BOARD_MODEL == BOARD_OPENCOM_XL || BOARD_MODEL == BOARD_H_W_PAPER
   #if DISPLAY == EINK_BW
   GxEPD2_BW<DISPLAY_MODEL, DISPLAY_MODEL::HEIGHT> display(DISPLAY_MODEL(pin_disp_cs, pin_disp_dc, pin_disp_reset, pin_disp_busy));
   float disp_target_fps = 0.5;
@@ -308,7 +326,7 @@ uint8_t display_contrast = 0x00;
     }
     level = value;
   }
-#elif BOARD_MODEL == BOARD_OPENCOM_XL || BOARD_MODEL == BOARD_RAK4631 || BOARD_MODEL == BOARD_H_W_PAPER
+#elif (BOARD_MODEL == BOARD_T3S3 && DISPLAY == EINK_BW) || BOARD_MODEL == BOARD_OPENCOM_XL || BOARD_MODEL == BOARD_RAK4631 || BOARD_MODEL == BOARD_H_W_PAPER
   // no backlight on these displays
   void set_contrast (void* display, uint8_t contrast) {};
 #else
@@ -326,7 +344,16 @@ bool display_init() {
       delay(50);
       digitalWrite(pin_display_en, HIGH);
     #elif BOARD_MODEL == BOARD_T3S3
+      #if DISPLAY == EINK_BW
+      // Keep the display on HSPI. The LoRa modem uses the global SPI bus
+      // with a different pin mapping on T3S3.
+      displaySPI.begin(pin_disp_sck, pin_disp_miso, pin_disp_mosi, pin_disp_cs);
+      display.init(0, true, 10, false, displaySPI, SPISettings(4000000, MSBFIRST, SPI_MODE0));
+      display.setFullWindow();
+      display.epd2.setBusyCallback(busyCallback);
+      #else
       Wire.begin(SDA_OLED, SCL_OLED);
+      #endif
     #elif BOARD_MODEL == BOARD_HELTEC32_V2
       Wire.begin(SDA_OLED, SCL_OLED);
     #elif BOARD_MODEL == BOARD_HELTEC32_V3
@@ -441,14 +468,24 @@ bool display_init() {
       #if DISPLAY == OLED
         set_contrast(&display, display_contrast);
       #endif
-      if (display_rotation != 0xFF) {
+      #if BOARD_MODEL == BOARD_T3S3 && DISPLAY == EINK_BW
+        if (display_rotation == 0xFF) display_rotation = 2;
+        // GxEPD2 exposes the panel as 122x250 at rotations 0/2.
         if (display_rotation == 0 || display_rotation == 2) {
-          disp_mode = DISP_MODE_LANDSCAPE;
-        } else {
           disp_mode = DISP_MODE_PORTRAIT;
+        } else {
+          disp_mode = DISP_MODE_LANDSCAPE;
         }
         display.setRotation(display_rotation);
-      } else {
+      #else
+        if (display_rotation != 0xFF) {
+          if (display_rotation == 0 || display_rotation == 2) {
+            disp_mode = DISP_MODE_LANDSCAPE;
+          } else {
+            disp_mode = DISP_MODE_PORTRAIT;
+          }
+          display.setRotation(display_rotation);
+        } else {
           #if BOARD_MODEL == BOARD_RNODE_NG_20
             disp_mode = DISP_MODE_PORTRAIT;
             display.setRotation(3);
@@ -494,7 +531,8 @@ bool display_init() {
             disp_mode = DISP_MODE_PORTRAIT;
             display.setRotation(3);
           #endif
-      }
+        }
+      #endif
 
       update_area_positions();
       for (int i = 0; i < INTERFACE_COUNT; i++) {
@@ -573,7 +611,20 @@ void fillRect(int16_t x, int16_t y, int16_t width, int16_t height, uint16_t colo
 
 // Draws a bitmap to the display and auto scales it based on the boards configured DISPLAY_SCALE
 void drawBitmap(int16_t startX, int16_t startY, const uint8_t* bitmap, int16_t bitmapWidth, int16_t bitmapHeight, uint16_t foregroundColour, uint16_t backgroundColour) {
-  #if !DISPLAY_SCALE_OVERRIDE
+  #if BOARD_MODEL == BOARD_T3S3 && DISPLAY == EINK_BW
+    for (int16_t row = 0; row < bitmapHeight; row++) {
+      const int16_t y0 = startY + (row * DISPLAY_SCALE_NUMERATOR) / DISPLAY_SCALE_DENOMINATOR;
+      const int16_t y1 = startY + ((row + 1) * DISPLAY_SCALE_NUMERATOR) / DISPLAY_SCALE_DENOMINATOR;
+      for (int16_t col = 0; col < bitmapWidth; col++) {
+        const int16_t index = row * ((bitmapWidth + 7) / 8) + (col / 8);
+        const uint8_t bitmask = 1 << (7 - (col % 8));
+        const int16_t x0 = startX + (col * DISPLAY_SCALE_NUMERATOR) / DISPLAY_SCALE_DENOMINATOR;
+        const int16_t x1 = startX + ((col + 1) * DISPLAY_SCALE_NUMERATOR) / DISPLAY_SCALE_DENOMINATOR;
+        const uint16_t colour = bitmap[index] & bitmask ? foregroundColour : backgroundColour;
+        fillRect(x0, y0, x1 - x0, y1 - y0, colour);
+      }
+    }
+  #elif !DISPLAY_SCALE_OVERRIDE
     display.drawBitmap(startX, startY, bitmap, bitmapWidth, bitmapHeight, foregroundColour, backgroundColour);
   #else
     for(int16_t row = 0; row < bitmapHeight; row++){
@@ -1086,16 +1137,54 @@ void display_recondition() {
 
 bool epd_blanked = false;
 #if DISPLAY == EINK_3C || DISPLAY == EINK_BW
+  #if BOARD_MODEL == BOARD_T3S3 && DISPLAY == EINK_BW
+  uint32_t epd_frame_hash() {
+    uint32_t hash = 2166136261UL;
+    const uint8_t *buffers[] = {stat_area.getBuffer(), disp_area.getBuffer()};
+
+    for (uint8_t buffer_index = 0; buffer_index < 2; buffer_index++) {
+      for (uint16_t i = 0; i < 64 * 64 / 8; i++) {
+        hash ^= buffers[buffer_index][i];
+        hash *= 16777619UL;
+      }
+    }
+
+    const uint8_t state[] = {
+      (uint8_t)eeprom_ok,
+      (uint8_t)firmware_update_mode,
+      (uint8_t)console_active,
+      (uint8_t)device_init_done,
+      (uint8_t)disp_mode,
+      (uint8_t)disp_ext_fb,
+      (uint8_t)display.getRotation()
+    };
+    for (uint8_t i = 0; i < sizeof(state); i++) {
+      hash ^= state[i];
+      hash *= 16777619UL;
+    }
+
+    return hash;
+  }
+  #endif
+
   void epd_blank(bool full_update = true) {
     display.setFullWindow();
     display.fillScreen(DISPLAY_WHITE);
+    #if BOARD_MODEL == BOARD_T3S3 && DISPLAY == EINK_BW
+    display.display(!full_update);
+    #else
     display.display(full_update);
+    #endif
   }
 
   void epd_black(bool full_update = true) {
     display.setFullWindow();
     display.fillScreen(DISPLAY_BLACK);
+    #if BOARD_MODEL == BOARD_T3S3 && DISPLAY == EINK_BW
+    display.display(!full_update);
+    #else
     display.display(full_update);
+    #endif
   }
 #endif
 
@@ -1131,6 +1220,12 @@ void update_display(bool blank = false) {
         if (!epd_blanked) {
           epd_blank();
           epd_blanked = true;
+          #if BOARD_MODEL == BOARD_T3S3 && DISPLAY == EINK_BW
+          last_epd_full_refresh = millis();
+          epd_partial_refreshes = 0;
+          epd_force_full_refresh = false;
+          epd_frame_hash_valid = false;
+          #endif
         }
       #endif
 
@@ -1176,12 +1271,39 @@ void update_display(bool blank = false) {
       }
       
       #if DISPLAY == EINK_BW || DISPLAY == EINK_3C
+        #if BOARD_MODEL == BOARD_T3S3 && DISPLAY == EINK_BW
+        const uint32_t frame_hash = epd_frame_hash();
+        const bool frame_changed =
+          !epd_frame_hash_valid ||
+          frame_hash != epd_last_frame_hash;
+
+        if (frame_changed && current-last_epd_refresh >= epd_update_interval) {
+          const bool full_refresh_due =
+            epd_force_full_refresh ||
+            current-last_epd_full_refresh >= REFRESH_PERIOD ||
+            epd_partial_refreshes >= EPD_MAX_PARTIAL_REFRESHES;
+
+          display.display(!full_refresh_due);
+          if (full_refresh_due) {
+            last_epd_full_refresh = millis();
+            epd_partial_refreshes = 0;
+            epd_force_full_refresh = false;
+          } else {
+            epd_partial_refreshes++;
+          }
+          last_epd_refresh = millis();
+          epd_last_frame_hash = frame_hash;
+          epd_frame_hash_valid = true;
+          epd_blanked = false;
+        }
+        #else
         if (current-last_epd_refresh >= epd_update_interval) {
           if (current-last_epd_full_refresh >= REFRESH_PERIOD) { display.display(false); last_epd_full_refresh = millis(); }
           else { display.display(true); }
           last_epd_refresh = millis();
           epd_blanked = false;
         }
+        #endif
       #elif BOARD_MODEL != BOARD_TDECK
         display.display();
       #endif

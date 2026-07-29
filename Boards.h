@@ -741,7 +741,16 @@
     #elif BOARD_MODEL == BOARD_T3S3
       #define IS_ESP32S3 true
       #define HAS_DISPLAY true
-      #define DISPLAY OLED
+      #if defined(T3S3_EPAPER)
+        #define DISPLAY EINK_BW
+        #define DISPLAY_MODEL GxEPD2_213_BN
+        #define DISPLAY_SCALE_OVERRIDE true
+        #define DISPLAY_SCALE 1.90625
+        #define DISPLAY_SCALE_NUMERATOR 122
+        #define DISPLAY_SCALE_DENOMINATOR 64
+      #else
+        #define DISPLAY OLED
+      #endif
       #define HAS_CONSOLE true
       #define HAS_BLUETOOTH false
       #define HAS_BLE true
@@ -844,6 +853,17 @@
       const int SD_MOSI = 11;
       const int SD_CLK = 14;
       const int SD_CS = 13;
+
+      #if defined(T3S3_EPAPER)
+        // LilyGO T3S3 E-Paper v1.x / DEPG0213BN
+        const int pin_disp_busy = 48;
+        const int pin_disp_reset = 47;
+        const int pin_disp_dc = 16;
+        const int pin_disp_cs = 15;
+        const int pin_disp_sck = 14;
+        const int pin_disp_mosi = 11;
+        const int pin_disp_miso = -1;
+      #endif
 
       #if HAS_NP == false
         #if defined(EXTERNAL_LEDS)
