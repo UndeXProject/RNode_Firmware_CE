@@ -380,6 +380,8 @@ release-heltec32_v2: check_bt_buffers
 	cp build/esp32.esp32.heltec_wifi_lora_32_V2/RNode_Firmware_CE.ino.bin build/rnode_firmware_heltec32v2.bin
 	cp build/esp32.esp32.heltec_wifi_lora_32_V2/RNode_Firmware_CE.ino.bootloader.bin build/rnode_firmware_heltec32v2.bootloader
 	cp build/esp32.esp32.heltec_wifi_lora_32_V2/RNode_Firmware_CE.ino.partitions.bin build/rnode_firmware_heltec32v2.partitions
+	zip --junk-paths ./Release/rnode_firmware_heltec32v2.zip ./Release/esptool/esptool.py ./Release/console_image.bin build/rnode_firmware_heltec32v2.boot_app0 build/rnode_firmware_heltec32v2.bin build/rnode_firmware_heltec32v2.bootloader build/rnode_firmware_heltec32v2.partitions
+	rm -r build
 
 release-heltec32_v3:
 	arduino-cli compile --fqbn esp32:esp32:heltec_wifi_lora_32_V3 $(COMMON_BUILD_FLAGS) --build-property "compiler.cpp.extra_flags=\"-DBOARD_MODEL=0x3A\""
