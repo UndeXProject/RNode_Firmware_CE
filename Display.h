@@ -657,12 +657,12 @@ void draw_cable_icon(int px, int py) {
 }
 
 void draw_bt_icon(int px, int py) {
-  if (bt_state == BT_STATE_OFF) {
+  if (bt_allow_pairing) {
+      stat_area.drawBitmap(px, py, bm_bt+2*32, 16, 16, DISPLAY_WHITE, DISPLAY_BLACK);
+  } else if (bt_state == BT_STATE_OFF) {
       stat_area.drawBitmap(px, py, bm_bt+0*32, 16, 16, DISPLAY_WHITE, DISPLAY_BLACK);
   } else if (bt_state == BT_STATE_ON) {
       stat_area.drawBitmap(px, py, bm_bt+1*32, 16, 16, DISPLAY_WHITE, DISPLAY_BLACK);
-  } else if (bt_state == BT_STATE_PAIRING) {
-      stat_area.drawBitmap(px, py, bm_bt+2*32, 16, 16, DISPLAY_WHITE, DISPLAY_BLACK);
   } else if (bt_state == BT_STATE_CONNECTED) {
       stat_area.drawBitmap(px, py, bm_bt+3*32, 16, 16, DISPLAY_WHITE, DISPLAY_BLACK);
   } else {
@@ -1049,7 +1049,7 @@ void draw_disp_area() {
             disp_area.drawBitmap(0, 37, bm_conf_missing, disp_area.width(), 27, DISPLAY_WHITE, DISPLAY_BLACK);
           }
         }
-      } else if (bt_state == BT_STATE_PAIRING and bt_ssp_pin != 0) {
+      } else if (bt_allow_pairing and bt_ssp_pin != 0) {
         char *pin_str = (char*)malloc(DISP_PIN_SIZE+1);
         sprintf(pin_str, "%06d", bt_ssp_pin);
 
@@ -1316,6 +1316,16 @@ void update_display(bool blank = false) {
 
 void display_unblank() {
   last_unblank_event = millis();
+}
+
+void display_request_refresh() {
+  last_disp_update = millis()-disp_update_interval-1;
+  #if DISPLAY == EINK_BW || DISPLAY == EINK_3C
+    last_epd_refresh = millis()-epd_update_interval-1;
+    #if BOARD_MODEL == BOARD_T3S3 && DISPLAY == EINK_BW
+      epd_frame_hash_valid = false;
+    #endif
+  #endif
 }
 
 void ext_fb_enable() {

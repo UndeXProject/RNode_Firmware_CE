@@ -223,6 +223,9 @@ char bt_devname[11];
       bt_pairing_started = millis();
       bt_state = BT_STATE_PAIRING;
       bt_ssp_pin = pairing_pin;
+      #if HAS_DISPLAY
+        display_request_refresh();
+      #endif
     }
 
     void bt_disable_pairing() {
@@ -239,6 +242,9 @@ char bt_devname[11];
         bt_ssp_pin = passkey;
         bt_pairing_started = millis();
         kiss_indicate_btpin();
+        #if HAS_DISPLAY
+          display_request_refresh();
+        #endif
       } else {
         // Serial.println("Pairing not allowed, re-init");
         SerialBT.disconnect();
