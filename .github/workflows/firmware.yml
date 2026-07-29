@@ -183,7 +183,7 @@ jobs:
             board: EBYTE E22 ESP32
           - target: release-tdeck
             platform: esp32
-            board: LilyGO T-Deck
+            board: LilyGO T-Deck / T-Deck Plus
           - target: release-tbeam_supreme
             platform: esp32
             board: LilyGO T-Beam Supreme

@@ -187,7 +187,9 @@ uint32_t last_epd_full_refresh = 0;
   #if DISPLAY == OLED
     Adafruit_SSD1306 display(DISP_W, DISP_H, &Wire, DISP_RST);
   #elif BOARD_MODEL == BOARD_TDECK
-    Adafruit_ST7789 display = Adafruit_ST7789(DISPLAY_CS, DISPLAY_DC, -1);
+    // The display and SX1262 share the same SPI bus on T-Deck and T-Deck Plus.
+    extern SPIClass interface_spi[1];
+    Adafruit_ST7789 display(&interface_spi[0], DISPLAY_CS, DISPLAY_DC, -1);
   #elif BOARD_MODEL == BOARD_TBEAM_S_V1
     Adafruit_SH1106G display = Adafruit_SH1106G(DISP_W, DISP_H, &Wire, -1);
   #elif BOARD_MODEL == BOARD_HELTEC_T114
@@ -251,7 +253,20 @@ GFXcanvas1 disp_area(64, 64);
 void fillRect(int16_t x, int16_t y, int16_t width, int16_t height, uint16_t colour);
 
 void update_area_positions() {
-  #if BOARD_MODEL == BOARD_HELTEC_T114
+  #if BOARD_MODEL == BOARD_TDECK
+    // Centre the two 64x64 UI panels at 2x scale on the 320x240 display.
+    if (disp_mode == DISP_MODE_PORTRAIT) {
+      p_ad_x = 56;
+      p_ad_y = 32;
+      p_as_x = 56;
+      p_as_y = 160;
+    } else if (disp_mode == DISP_MODE_LANDSCAPE) {
+      p_ad_x = 32;
+      p_ad_y = 56;
+      p_as_x = 160;
+      p_as_y = 56;
+    }
+  #elif BOARD_MODEL == BOARD_HELTEC_T114
     if (disp_mode == DISP_MODE_PORTRAIT) {
       p_ad_x = 16;
       p_ad_y = 64;
@@ -334,6 +349,52 @@ uint8_t display_contrast = 0x00;
     display->ssd1306_command(SSD1306_SETCONTRAST);
     display->ssd1306_command(contrast);
   }
+#endif
+
+#if BOARD_MODEL == BOARD_TDECK
+void tdeck_display_init() {
+  // T-Deck and T-Deck Plus use the same 240x320 ST7789 panel. The values
+  // below mirror LilyGO's current INIT_SEQUENCE_2 configuration.
+  display.init(240, 320, SPI_MODE0);
+  display.setSPISpeed(40000000);
+
+  display.sendCommand(ST77XX_SLPOUT);
+  delay(120);
+  display.sendCommand(ST77XX_NORON);
+
+  const uint8_t porch[] = {0x0C, 0x0C, 0x00, 0x33, 0x33};
+  const uint8_t gate[] = {0x75};
+  const uint8_t vcom[] = {0x1A};
+  const uint8_t lcm[] = {0x2C};
+  const uint8_t vdv_vrh_enable[] = {0x01};
+  const uint8_t vrh[] = {0x13};
+  const uint8_t vdv[] = {0x20};
+  const uint8_t frame_rate[] = {0x0F};
+  const uint8_t power[] = {0xA4, 0xA1};
+  const uint8_t positive_gamma[] = {
+    0xD0, 0x0D, 0x14, 0x0D, 0x0D, 0x09, 0x38,
+    0x44, 0x4E, 0x3A, 0x17, 0x18, 0x2F, 0x30
+  };
+  const uint8_t negative_gamma[] = {
+    0xD0, 0x09, 0x0F, 0x08, 0x07, 0x14, 0x37,
+    0x44, 0x4D, 0x38, 0x15, 0x16, 0x2C, 0x3E
+  };
+
+  display.sendCommand(0xB2, porch, sizeof(porch));
+  display.sendCommand(0xB7, gate, sizeof(gate));
+  display.sendCommand(0xBB, vcom, sizeof(vcom));
+  display.sendCommand(0xC0, lcm, sizeof(lcm));
+  display.sendCommand(0xC2, vdv_vrh_enable, sizeof(vdv_vrh_enable));
+  display.sendCommand(0xC3, vrh, sizeof(vrh));
+  display.sendCommand(0xC4, vdv, sizeof(vdv));
+  display.sendCommand(0xC6, frame_rate, sizeof(frame_rate));
+  display.sendCommand(0xD0, power, sizeof(power));
+  display.sendCommand(0xE0, positive_gamma, sizeof(positive_gamma));
+  display.sendCommand(0xE1, negative_gamma, sizeof(negative_gamma));
+  display.sendCommand(ST77XX_INVON);
+  display.sendCommand(ST77XX_DISPON);
+  delay(120);
+}
 #endif
 
 bool display_init() {
@@ -451,8 +512,8 @@ bool display_init() {
     #if DISPLAY == EINK_BW || DISPLAY == EINK_3C
     if(false) {
     #elif BOARD_MODEL == BOARD_TDECK
-    display.init(240, 320);
-    display.setSPISpeed(80e6);
+    tdeck_display_init();
+    if (false) {
     #elif BOARD_MODEL == BOARD_HELTEC_T114
     display.init();
     // set white as default pixel colour for Heltec T114
@@ -471,6 +532,14 @@ bool display_init() {
       #if BOARD_MODEL == BOARD_T3S3 && DISPLAY == EINK_BW
         if (display_rotation == 0xFF) display_rotation = 2;
         // GxEPD2 exposes the panel as 122x250 at rotations 0/2.
+        if (display_rotation == 0 || display_rotation == 2) {
+          disp_mode = DISP_MODE_PORTRAIT;
+        } else {
+          disp_mode = DISP_MODE_LANDSCAPE;
+        }
+        display.setRotation(display_rotation);
+      #elif BOARD_MODEL == BOARD_TDECK
+        if (display_rotation == 0xFF) display_rotation = 3;
         if (display_rotation == 0 || display_rotation == 2) {
           disp_mode = DISP_MODE_PORTRAIT;
         } else {
@@ -524,9 +593,6 @@ bool display_init() {
           #elif BOARD_MODEL == BOARD_RAK4631 || BOARD_MODEL == BOARD_OPENCOM_XL
             disp_mode = DISP_MODE_LANDSCAPE;
             display.setRotation(0);
-          #elif BOARD_MODEL == BOARD_TDECK
-            disp_mode = DISP_MODE_PORTRAIT;
-            display.setRotation(3);
           #else
             disp_mode = DISP_MODE_PORTRAIT;
             display.setRotation(3);
@@ -624,6 +690,37 @@ void drawBitmap(int16_t startX, int16_t startY, const uint8_t* bitmap, int16_t b
         fillRect(x0, y0, x1 - x0, y1 - y0, colour);
       }
     }
+  #elif BOARD_MODEL == BOARD_TDECK
+    // Stream each scaled row in a single SPI transaction. Calling fillRect()
+    // once per source pixel is too slow for a display sharing SPI with LoRa.
+    const int16_t scaled_width = bitmapWidth * DISPLAY_SCALE;
+    uint16_t row_pixels[DISP_W * DISPLAY_SCALE];
+
+    display.startWrite();
+    display.setAddrWindow(
+      startX,
+      startY,
+      scaled_width,
+      bitmapHeight * DISPLAY_SCALE
+    );
+
+    for (int16_t row = 0; row < bitmapHeight; row++) {
+      for (int16_t col = 0; col < bitmapWidth; col++) {
+        const int16_t index = row * ((bitmapWidth + 7) / 8) + (col / 8);
+        const uint8_t bitmask = 1 << (7 - (col % 8));
+        const uint16_t colour =
+          bitmap[index] & bitmask ? foregroundColour : backgroundColour;
+
+        for (uint8_t x_scale = 0; x_scale < DISPLAY_SCALE; x_scale++) {
+          row_pixels[col * DISPLAY_SCALE + x_scale] = colour;
+        }
+      }
+
+      for (uint8_t y_scale = 0; y_scale < DISPLAY_SCALE; y_scale++) {
+        display.writePixels(row_pixels, scaled_width);
+      }
+    }
+    display.endWrite();
   #elif !DISPLAY_SCALE_OVERRIDE
     display.drawBitmap(startX, startY, bitmap, bitmapWidth, bitmapHeight, foregroundColour, backgroundColour);
   #else
@@ -924,7 +1021,9 @@ void update_stat_area() {
       drawBitmap(p_as_x, p_as_y, stat_area.getBuffer(), stat_area.width(), stat_area.height(), DISPLAY_WHITE, DISPLAY_BLACK);
     } else if (disp_mode == DISP_MODE_LANDSCAPE) {
       drawBitmap(p_as_x+2, p_as_y, stat_area.getBuffer(), stat_area.width(), stat_area.height(), DISPLAY_WHITE, DISPLAY_BLACK);
-      if (device_init_done && !disp_ext_fb) drawLine(p_as_x, 0, p_as_x, DISP_W/2, DISPLAY_WHITE);
+      #if BOARD_MODEL != BOARD_TDECK
+        if (device_init_done && !disp_ext_fb) drawLine(p_as_x, 0, p_as_x, DISP_W/2, DISPLAY_WHITE);
+      #endif
     }
 
   } else {
@@ -933,7 +1032,9 @@ void update_stat_area() {
     } else if (console_active && device_init_done) {
       drawBitmap(p_as_x, p_as_y, bm_console, stat_area.width(), stat_area.height(), DISPLAY_BLACK, DISPLAY_WHITE);
       if (disp_mode == DISP_MODE_LANDSCAPE) {
-        drawLine(p_as_x, 0, p_as_x, DISP_W/2, DISPLAY_WHITE);
+        #if BOARD_MODEL != BOARD_TDECK
+          drawLine(p_as_x, 0, p_as_x, DISP_W/2, DISPLAY_WHITE);
+        #endif
       }
     }
   }
@@ -1113,7 +1214,9 @@ void update_disp_area() {
   drawBitmap(p_ad_x, p_ad_y, disp_area.getBuffer(), disp_area.width(), disp_area.height(), DISPLAY_WHITE, DISPLAY_BLACK);
   if (disp_mode == DISP_MODE_LANDSCAPE) {
     if (device_init_done && !firmware_update_mode && !disp_ext_fb) {
-      drawLine(0, 0, 0, 63, DISPLAY_WHITE);
+      #if BOARD_MODEL != BOARD_TDECK
+        drawLine(0, 0, 0, 63, DISPLAY_WHITE);
+      #endif
     }
   }
 }

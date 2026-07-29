@@ -137,6 +137,7 @@
   #define EINK_3C 0x03
   #define MONO_OLED 0x04
   #define TFT 0x05
+  #define ADAFRUIT_TFT 0x06
 
   #if defined(ESP32)
     #define PLATFORM PLATFORM_ESP32
@@ -877,8 +878,10 @@
 
     #elif BOARD_MODEL == BOARD_TDECK
       #define IS_ESP32S3 true
-      #define HAS_DISPLAY false
-      #define DISPLAY TFT // to be tested...
+      #define HAS_DISPLAY true
+      #define DISPLAY ADAFRUIT_TFT
+      #define DISPLAY_SCALE_OVERRIDE true
+      #define DISPLAY_SCALE 2
       #define HAS_CONSOLE false
       #define HAS_BLUETOOTH false
       #define HAS_BLE true

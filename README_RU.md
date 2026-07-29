@@ -97,7 +97,7 @@ shasum -a 256 release-t3s3_epaper.zip
 | Heltec LoRa32 v3 | [Купить](https://heltec.org/project/wifi-lora-32-v3/) | SX1262 | ESP32 | |
 | LilyGo T3S3 v1.0 | [Купить](https://lilygo.cc/products/t3s3-v1-0) | SX1262, SX1276 или SX1280 | ESP32-S3 | |
 | LilyGo T3S3 E-Paper | [Купить](https://lilygo.cc/products/ts-s3-epaper) | SX1262, SX1276 или SX1280 | ESP32-S3 | Дисплей DEPG0213BN |
-| LilyGO T-Deck | [Купить](https://lilygo.cc/products/t-deck) | SX1262 | ESP32-S3 | |
+| LilyGO T-Deck / T-Deck Plus | [Купить](https://lilygo.cc/products/t-deck) | SX1262 | ESP32-S3 | Поддержка дисплея ST7789 |
 | LilyGo T-Echo | [Купить](https://lilygo.cc/products/t-echo-lilygo) | SX1262 | nRF52 | |
 | Heltec T114 | [Купить](https://heltec.org/project/mesh-node-t114/) | SX1262 | nRF52 | |
 | Самодельные платы ESP32 | | Любой поддерживаемый | ESP32 | Можно использовать любую плату с ESP32, совместимую с Adafruit Feather, либо типовую плату ESP32 |
