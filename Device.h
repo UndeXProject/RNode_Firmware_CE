@@ -133,9 +133,21 @@ void device_load_firmware_hash() {
 }
 
 void device_save_firmware_hash() {
-  for (uint8_t i = 0; i < DEV_HASH_LEN; i++) {
-    eeprom_update(dev_fwhash_addr(i), dev_firmware_hash_target[i]);
-  }
+  #if HAS_EEPROM && MCU_VARIANT == MCU_ESP32
+    bool changed = false;
+    for (uint8_t i = 0; i < DEV_HASH_LEN; i++) {
+      const int address = dev_fwhash_addr(i);
+      if (EEPROM.read(address) != dev_firmware_hash_target[i]) {
+        EEPROM.write(address, dev_firmware_hash_target[i]);
+        changed = true;
+      }
+    }
+    if (changed) EEPROM.commit();
+  #else
+    for (uint8_t i = 0; i < DEV_HASH_LEN; i++) {
+      eeprom_update(dev_fwhash_addr(i), dev_firmware_hash_target[i]);
+    }
+  #endif
   #if !HAS_EEPROM && MCU_VARIANT == MCU_NRF52
     eeprom_flush();
   #endif
