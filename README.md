@@ -42,6 +42,13 @@ The [firmware build workflow](https://github.com/UndeXProject/RNode_Firmware_CE/
 runs every day at 03:17 Europe/Moscow and builds all 32 release profiles for the
 supported ESP32 and nRF52 boards.
 
+> [!IMPORTANT]
+> Firmware archives downloaded from this repository must be flashed with the
+> [UndeXProject RNode CE Flasher](https://undexproject.github.io/rnode-flasher/).
+> Its device catalogue and firmware mappings are kept in sync with all 32 build
+> profiles in this fork. Flashers intended for the official or upstream firmware
+> may select incompatible packages or may not include the boards supported here.
+
 The `nightly` tag and its prerelease are updated in place after every successful
 scheduled build. The release description contains a table matching each ZIP
 archive to its board and radio configuration, together with the archive's
@@ -181,7 +188,11 @@ pip install rns --upgrade
 rnodeconf --autoinstall
 ```
 
-For most of the supported device types, it is also possible to use [Liam Cottle's Web-based RNode Flasher](https://liamcottle.github.io/rnode-flasher/). This option may be easier if you're not familiar with using a command line interface.
+For ZIP firmware archives published by this fork, use the
+[UndeXProject RNode CE Flasher](https://undexproject.github.io/rnode-flasher/).
+It runs in a Chromium-based browser and provides the board catalogue and Nightly
+download links specific to this repository. Select the exact board and radio
+module configuration before flashing.
 
 For more detailed instruction and in-depth guides, you can have a look at some of these resources:
 
