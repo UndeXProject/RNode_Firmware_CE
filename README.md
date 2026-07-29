@@ -1,3 +1,12 @@
+**English** | [Русский](README_RU.md)
+
+> [!WARNING]
+> This repository is an independent personal fork of the official
+> [RNode Firmware CE project](https://github.com/liberatedsystems/RNode_Firmware_CE).
+> Its Nightly builds are unofficial, are not supported or endorsed by the
+> upstream maintainers, and are provided without warranty. Use and flash them
+> entirely at your own risk.
+
 # RNode Firmware - Community Edition
 
 This is the community maintained fork of the open firmware which powers RNode devices. It has been created to continue to expand development and support for more hardware devices, as the upstream repository is no longer accepting PRs for new hardware support. The original repository by Mark Qvist can be found [here](https://github.com/markqvist/RNode_Firmware).
@@ -26,13 +35,6 @@ The latest release, installable through `rnodeconf`, is version `1.75`. This rel
 You must have at least version `2.1.3` of `rnodeconf` installed to update your RNode Firmware install to version `1.75`. **YOU MUST USE AN RNS VERSION HIGHER THAN `0.9.3` IF YOU ARE USING A MULTI-INTERFACE RNODE!**
 
 ## Nightly Releases
-
-> [!WARNING]
-> This repository is an independent personal fork of the official
-> [RNode Firmware CE project](https://github.com/liberatedsystems/RNode_Firmware_CE).
-> Its Nightly builds are unofficial, are not supported or endorsed by the
-> upstream maintainers, and are provided without warranty. Use and flash them
-> entirely at your own risk.
 
 Automated development builds from the current `master` branch are available in
 the [rolling Nightly release](https://github.com/UndeXProject/RNode_Firmware_CE/releases/tag/nightly).
