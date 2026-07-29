@@ -76,13 +76,21 @@ jobs:
             ~/.arduino15
             ~/Arduino
             ~/.local
-          key: arduino-${{ runner.os }}-${{ matrix.platform }}-v1-${{ hashFiles('arduino-cli.yaml', 'Makefile') }}
+          key: arduino-${{ runner.os }}-${{ matrix.platform }}-v2-${{ hashFiles('arduino-cli.yaml', 'Makefile') }}
 
       - name: Install toolchain
         if: steps.cache.outputs.cache-hit != 'true'
         run: |
           make prep-index
           make prep-${{ matrix.platform }}
+
+      - name: Configure ESP32 Bluetooth buffers
+        if: matrix.platform == 'esp32'
+        run: |
+          bluetooth_source="$HOME/.arduino15/packages/esp32/hardware/esp32/2.0.17/libraries/BluetoothSerial/src/BluetoothSerial.cpp"
+          sed -i -E 's/^#define RX_QUEUE_SIZE .*/#define RX_QUEUE_SIZE 6144/' "$bluetooth_source"
+          sed -i -E 's/^#define TX_QUEUE_SIZE .*/#define TX_QUEUE_SIZE 384/' "$bluetooth_source"
+          ./esp32_btbufs.py "$bluetooth_source"
 
   build:
     name: Build ${{ matrix.target }}
@@ -181,7 +189,7 @@ jobs:
             ~/.arduino15
             ~/Arduino
             ~/.local
-          key: arduino-${{ runner.os }}-${{ matrix.platform }}-v1-${{ hashFiles('arduino-cli.yaml', 'Makefile') }}
+          key: arduino-${{ runner.os }}-${{ matrix.platform }}-v2-${{ hashFiles('arduino-cli.yaml', 'Makefile') }}
           fail-on-cache-miss: true
 
       - name: Add user tools to PATH
